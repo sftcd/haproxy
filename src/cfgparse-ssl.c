@@ -1246,6 +1246,23 @@ static int bind_parse_alpn(char **args, int cur_arg, struct proxy *px, struct bi
 	return ssl_bind_parse_alpn(args, cur_arg, px, &conf->ssl_conf, 0, err);
 }
 
+#ifndef OPENSSL_NO_ECH
+
+static int ssl_bind_parse_ech(char **args, int cur_arg, struct proxy *px, struct ssl_bind_conf *conf, int from_cli, char **err)
+{
+    if (conf->ech_filedir) free(conf->ech_filedir);
+    conf->ech_filedir=strdup(args[cur_arg+1]);
+    return 0; 
+}
+
+static int bind_parse_ech(char **args, int cur_arg, struct proxy *px, struct bind_conf *conf, char **err)
+{
+    if (conf->ech_filedir) free(conf->ech_filedir);
+    conf->ech_filedir=strdup(args[cur_arg+1]);
+    return 0;
+}
+#endif
+
 /* parse the "ssl" bind keyword */
 static int bind_parse_ssl(char **args, int cur_arg, struct proxy *px, struct bind_conf *conf, char **err)
 {
@@ -2219,6 +2236,9 @@ struct ssl_crtlist_kw ssl_crtlist_kws[] = {
 	{ "ssl-max-ver",           ssl_bind_parse_tls_method_minmax,1 }, /* maximum version */
 	{ "verify",                ssl_bind_parse_verify,           1 }, /* set SSL verify method */
 	{ "ocsp-update",           ssl_bind_parse_ocsp_update,      1 }, /* ocsp update mode (on or off) */
+#ifndef OPENSSL_NO_ECH
+	{ "ech",                   ssl_bind_parse_ech,              1 }, /* set ECH PEM file */
+#endif
 	{ NULL, NULL, 0 },
 };
 
@@ -2264,6 +2284,9 @@ static struct bind_kw_list bind_kws = { "SSL", { }, {
 	{ "verify",                bind_parse_verify,             1 }, /* set SSL verify method */
 	{ "npn",                   bind_parse_npn,                1 }, /* set NPN supported protocols */
 	{ "prefer-client-ciphers", bind_parse_pcc,                0 }, /* prefer client ciphers */
+#ifndef OPENSSL_NO_ECH
+	{ "ech",                   bind_parse_ech,              1 }, /* set ECH PEM file */
+#endif
 	{ NULL, NULL, 0 },
 }};
 

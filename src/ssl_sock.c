@@ -3676,6 +3676,7 @@ int ckch_inst_new_load_store(const char *path, struct ckch_store *ckchs, struct 
 		goto error;
 	}
 #endif
+
 	if (!bind_conf->default_ctx) {
 		bind_conf->default_ctx = ctx;
 		bind_conf->default_ssl_conf = ssl_conf;
@@ -4076,6 +4077,18 @@ ssl_sock_initial_ctx(struct bind_conf *bind_conf)
 
 	ctx = SSL_CTX_new(SSLv23_server_method());
 	bind_conf->initial_ctx = ctx;
+
+
+#ifndef OPENSSL_NO_ECH
+    if (!ctx) {
+        cfgerr += 1;
+    }
+    if (!cfgerr && bind_conf->ech_filedir) {
+        if (SSL_CTX_ech_server_enable(ctx, bind_conf->ech_filedir)!=1) {
+		    cfgerr += 1;
+        }
+    }
+#endif
 
 	if (conf_ssl_methods->flags && (conf_ssl_methods->min || conf_ssl_methods->max))
 		ha_warning("Proxy '%s': no-sslv3/no-tlsv1x are ignored for bind '%s' at [%s:%d]. "
