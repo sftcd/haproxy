@@ -63,6 +63,9 @@ static const char *common_options[] = {
 	"ssl-hello-chk", "smtpchk", "pgsql-check", "redis-check",
 	"mysql-check", "ldap-check", "spop-check", "tcp-check",
 	"external-check", "forwardfor", "original-to", "forwarded",
+#ifndef OPENSSL_NO_ECH
+    "ssl-hello-ech",
+#endif
 	NULL /* must be last */
 };
 
@@ -2268,6 +2271,13 @@ stats_error_parsing:
 			if (err_code & ERR_FATAL)
 				goto out;
 		}
+#ifndef OPENSSL_NO_ECH
+		else if (strcmp(args[1], "ssl-hello-ech") == 0) {
+			err_code |= proxy_parse_ssl_hello_ech_opt(args, 0, curproxy, curr_defproxy, file, linenum);
+			if (err_code & ERR_FATAL)
+				goto out;
+		}
+#endif
 		else if (strcmp(args[1], "smtpchk") == 0) {
 			err_code |= proxy_parse_smtpchk_opt(args, 0, curproxy, curr_defproxy, file, linenum);
 			if (err_code & ERR_FATAL)

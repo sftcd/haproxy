@@ -5420,10 +5420,16 @@ int ssl_sock_prepare_bind_conf(struct bind_conf *bind_conf)
 				   px->id, bind_conf->arg, bind_conf->file, bind_conf->line);
 		}
 		else {
+#ifndef OPENSSL_NO_ECH
+            if (!bind_conf->ech_filedir) {
+#endif
 			ha_alert("Proxy '%s': no SSL certificate specified for bind '%s' at [%s:%d] (use 'crt').\n",
 				 px->id, bind_conf->arg, bind_conf->file, bind_conf->line);
 			return -1;
 		}
+#ifndef OPENSSL_NO_ECH
+        }
+#endif
 	}
 	if (!ssl_shctx && global.tune.sslcachesize) {
 		alloc_ctx = shctx_init(&ssl_shctx, global.tune.sslcachesize,
