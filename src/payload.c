@@ -711,7 +711,14 @@ smp_fetch_ssl_hello_ech(const struct arg *args, struct sample *smp, const char *
     char *inner_sni=NULL;
     char *outer_sni=NULL;
     int srv=0;
+    char *pemfname=NULL;
 
+    if (!args) return 0;
+
+    pemfname=args->data.str.area;
+
+    //args ? args->data.str.area : NULL,
+				     //args ? args->data.str.data : 0);
     /*
      * Do some initial checks to be sure we have an entire CH
      * before attempting ECH decryption 
@@ -774,7 +781,7 @@ smp_fetch_ssl_hello_ech(const struct arg *args, struct sample *smp, const char *
      */
     ctx=SSL_CTX_new(meth);
     if (!ctx) goto not_ssl_hello;
-    srv=SSL_CTX_ech_server_enable(ctx,"echconfig.pem");
+    srv=SSL_CTX_ech_server_enable(ctx,pemfname);
     if (srv!=1) {
         SSL_CTX_free(ctx);
         goto not_ssl_hello;
@@ -800,6 +807,15 @@ smp_fetch_ssl_hello_ech(const struct arg *args, struct sample *smp, const char *
     smp->data.u.str.area = inner_sni;
     smp->data.u.str.data = (inner_sni?strlen(inner_sni):0);
     smp->flags = SMP_F_VOLATILE | SMP_F_CONST;
+
+    /* 
+     * We'll try move the inner CH onto the channel just to see what happens
+     */
+    //memcpy(ch,newdata,newlen);
+
+    channel_erase(chn);
+    ci_putblk(chn,(char*)newdata,newlen);
+
     return 1;
 
  too_short:
@@ -1520,7 +1536,7 @@ static struct sample_fetch_kw_list smp_kws = {ILH, {
 	{ "rep_ssl_hello_type",  smp_fetch_ssl_hello_type, 0,                      NULL,           SMP_T_SINT, SMP_USE_L6RES },
 	{ "req_len",             smp_fetch_len,            0,                      NULL,           SMP_T_SINT, SMP_USE_L6REQ },
 #ifndef OPENSSL_NO_ECH
-	{ "req_ssl_ech",         smp_fetch_ssl_hello_ech,  0,                      NULL,           SMP_T_STR,  SMP_USE_L6REQ },
+	{ "req_ssl_ech",         smp_fetch_ssl_hello_ech,  ARG1(0,STR),            NULL,           SMP_T_STR,  SMP_USE_L6REQ },
 #endif
 	{ "req_ssl_hello_type",  smp_fetch_ssl_hello_type, 0,                      NULL,           SMP_T_SINT, SMP_USE_L6REQ },
 	{ "req_ssl_sni",         smp_fetch_ssl_hello_sni,  0,                      NULL,           SMP_T_STR,  SMP_USE_L6REQ },

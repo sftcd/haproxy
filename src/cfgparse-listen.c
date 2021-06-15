@@ -2271,13 +2271,6 @@ stats_error_parsing:
 			if (err_code & ERR_FATAL)
 				goto out;
 		}
-#ifndef OPENSSL_NO_ECH
-		else if (strcmp(args[1], "ssl-hello-ech") == 0) {
-			err_code |= proxy_parse_ssl_hello_ech_opt(args, 0, curproxy, curr_defproxy, file, linenum);
-			if (err_code & ERR_FATAL)
-				goto out;
-		}
-#endif
 		else if (strcmp(args[1], "smtpchk") == 0) {
 			err_code |= proxy_parse_smtpchk_opt(args, 0, curproxy, curr_defproxy, file, linenum);
 			if (err_code & ERR_FATAL)
