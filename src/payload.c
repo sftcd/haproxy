@@ -787,7 +787,7 @@ smp_fetch_ssl_hello_ech(const struct arg *args, struct sample *smp, const char *
         goto not_ssl_hello;
     }
     /*
-     * attempt t decrypt and retrieve inner
+     * Attempt to decrypt and retrieve inner/outer SNI values
      */
     srv=SSL_CTX_ech_raw_decrypt(ctx,ch,chlen,newdata,&newlen,&inner_sni,&outer_sni,&decrypted_ok);
     if (srv==0) goto not_ssl_hello;
@@ -800,28 +800,32 @@ smp_fetch_ssl_hello_ech(const struct arg *args, struct sample *smp, const char *
         smp->data.u.str.area = outer_sni;
         smp->data.u.str.data = (outer_sni?strlen(outer_sni):0);
         smp->flags = SMP_F_VOLATILE | SMP_F_CONST;
-        return 1;
-    } 
-    /* switch on inner SNI */
-    smp->data.type = SMP_T_STR;
-    smp->data.u.str.area = inner_sni;
-    smp->data.u.str.data = (inner_sni?strlen(inner_sni):0);
-    smp->flags = SMP_F_VOLATILE | SMP_F_CONST;
+    } else { 
+        /* switch on inner SNI */
+        smp->data.type = SMP_T_STR;
+        smp->data.u.str.area = inner_sni;
+        smp->data.u.str.data = (inner_sni?strlen(inner_sni):0);
+        smp->flags = SMP_F_VOLATILE | SMP_F_CONST;
+        /* 
+         * Move the inner CH onto the channel 
+         * TODO: find out if this is ok/broken
+         */
+        channel_erase(chn);
+        ci_putblk(chn,(char*)newdata,newlen);
+    }
 
-    /* 
-     * We'll try move the inner CH onto the channel just to see what happens
-     */
-    //memcpy(ch,newdata,newlen);
-
-    channel_erase(chn);
-    ci_putblk(chn,(char*)newdata,newlen);
-
+    if (ctx) { SSL_CTX_free(ctx); ctx=NULL; }
+    if (inner_sni) { OPENSSL_free(inner_sni); inner_sni=NULL; }
+    if (outer_sni) { OPENSSL_free(outer_sni); outer_sni=NULL; }
     return 1;
 
  too_short:
 	smp->flags = SMP_F_MAY_CHANGE;
 
  not_ssl_hello:
+    if (ctx) { SSL_CTX_free(ctx); ctx=NULL; }
+    if (inner_sni) { OPENSSL_free(inner_sni); inner_sni=NULL; }
+    if (outer_sni) { OPENSSL_free(outer_sni); outer_sni=NULL; }
 
 	return 0;
 }
