@@ -526,6 +526,131 @@ smp_fetch_req_ssl_ver(const struct arg *args, struct sample *smp, const char *kw
 	return 0;
 }
 
+#ifndef OPENSSL_NO_ECH
+static int
+attempt_split_ech(const struct arg *args, struct sample *smp, const char *kw, void *private)
+{
+	int hs_len,bleft;
+	struct channel *chn;
+	unsigned char *data;
+    unsigned char *ch;
+    size_t chlen;
+    int decrypted_ok=0;
+    unsigned char newdata[1024]; /* TODO: alloc a good length */
+    size_t newlen=1024;
+    SSL_CTX *ctx=NULL; /* TODO: figure how to make this from config */
+    char *inner_sni=NULL;
+    char *outer_sni=NULL;
+    int srv=0;
+
+    /*
+     * Do some initial checks to be sure we have an entire CH
+     * before attempting ECH decryption 
+     * Note: code below ignores 3-octet length!
+     */
+
+	if (!smp->strm)
+		goto not_ssl_hello;
+
+	/* meaningless for HTX buffers */
+	if (IS_HTX_STRM(smp->strm))
+		goto not_ssl_hello;
+
+	chn = ((smp->opt & SMP_OPT_DIR) == SMP_OPT_DIR_RES) ? &smp->strm->res : &smp->strm->req;
+	bleft = ci_data(chn);
+	data = (unsigned char *)ci_head(chn);
+    ch=data;
+
+	/* Check for SSL/TLS Handshake */
+	if (!bleft)
+		goto too_short;
+	if (*data != 0x16)
+		goto not_ssl_hello;
+
+	/* Check for SSLv3 or later (SSL version >= 3.0) in the record layer*/
+	if (bleft < 3)
+		goto too_short;
+	if (data[1] < 0x03)
+		goto not_ssl_hello;
+
+	if (bleft < 5)
+		goto too_short;
+	hs_len = (data[3] << 8) + data[4];
+    chlen=hs_len+5;
+	if (hs_len < 1 + 3 + 2 + 32 + 1 + 2 + 2 + 1 + 1 + 2 + 2)
+		goto not_ssl_hello; /* too short to have an extension */
+
+	data += 5; /* enter TLS handshake */
+	bleft -= 5;
+
+	/* Check for a complete client hello starting at <data> */
+	if (bleft < 1)
+		goto too_short;
+	if (data[0] != 0x01) /* msg_type = Client Hello */
+		goto not_ssl_hello;
+
+	/* Check the Hello's length */
+	if (bleft < 4)
+		goto too_short;
+	hs_len = (data[1] << 16) + (data[2] << 8) + data[3];
+	if (hs_len < 2 + 32 + 1 + 2 + 2 + 1 + 1 + 2 + 2)
+		goto not_ssl_hello; /* too short to have an extension */
+
+	/* We want the full handshake here */
+	if (bleft < hs_len)
+		goto too_short;
+
+    /*
+     * Make up SSL_CTX - we'll move this to when cfg is read later
+     */
+    if (!smp->px) goto not_ssl_hello; 
+    ctx=smp->px->tcp_req.ech_ctx;
+    /*
+     * Attempt to decrypt and retrieve inner/outer SNI values
+     */
+    srv=SSL_CTX_ech_raw_decrypt(ctx,ch,chlen,newdata,&newlen,&inner_sni,&outer_sni,&decrypted_ok);
+    if (srv==0) goto not_ssl_hello;
+    
+    smp->ctx.i=1; /* remember we tried */
+    if (!decrypted_ok) {
+        /*
+         * GREASE or a decrypt fail => leave handling to outer SNI 
+         */
+        smp->data.type = SMP_T_STR;
+        smp->data.u.str.area = outer_sni;
+        smp->data.u.str.data = (outer_sni?strlen(outer_sni):0);
+        //smp->flags = SMP_F_VOLATILE | SMP_F_CONST;
+        smp->flags = SMP_F_VOLATILE ;
+        if (inner_sni) { OPENSSL_free(inner_sni); inner_sni=NULL; }
+    } else { 
+        /* switch on inner SNI */
+        if (outer_sni) { OPENSSL_free(outer_sni); outer_sni=NULL; }
+        smp->data.type = SMP_T_STR;
+        smp->data.u.str.area = inner_sni;
+        smp->data.u.str.data = (inner_sni?strlen(inner_sni):0);
+        //smp->flags = SMP_F_VOLATILE | SMP_F_CONST;
+        smp->flags = SMP_F_VOLATILE ;
+        /* 
+         * Move the inner CH onto the channel 
+         * TODO: find out if this is ok/broken
+         */
+        channel_erase(chn);
+        ci_putblk(chn,(char*)newdata,newlen);
+    }
+
+    return 1;
+
+ too_short:
+	smp->flags = SMP_F_MAY_CHANGE;
+
+ not_ssl_hello:
+    if (inner_sni) { OPENSSL_free(inner_sni); inner_sni=NULL; }
+    if (outer_sni) { OPENSSL_free(outer_sni); outer_sni=NULL; }
+
+	return 0;
+}
+#endif
+
 /* Try to extract the Server Name Indication that may be presented in a TLS
  * client hello handshake message. The format of the message is the following
  * (cf RFC5246 + RFC6066) :
@@ -568,6 +693,20 @@ smp_fetch_ssl_hello_sni(const struct arg *args, struct sample *smp, const char *
 
 	if (!smp->strm)
 		goto not_ssl_hello;
+
+#ifndef OPERNSSL_NO_ECH
+    /*
+     * If we configured ECH, and haven't yet decrypted, then 
+     * attempt decryption.
+     */
+    if (smp->px && smp->px->tcp_req.ech_ctx && !smp->ctx.i) {
+        /* 
+         * not correct yet - should only attempt decryption once even if 
+         * lots of rules
+         */
+        return attempt_split_ech(args, smp, kw, private);
+    }
+#endif
 
 	/* meaningless for HTX buffers */
 	if (IS_HTX_STRM(smp->strm))
@@ -693,145 +832,6 @@ smp_fetch_ssl_hello_sni(const struct arg *args, struct sample *smp, const char *
 
 	return 0;
 }
-
-#ifndef OPENSSL_NO_ECH
-static int
-smp_fetch_ssl_hello_ech(const struct arg *args, struct sample *smp, const char *kw, void *private)
-{
-	int hs_len,bleft;
-	struct channel *chn;
-	unsigned char *data;
-    unsigned char *ch;
-    size_t chlen;
-    int decrypted_ok=0;
-    unsigned char newdata[1024]; /* TODO: alloc a good length */
-    size_t newlen=1024;
-    const SSL_METHOD *meth = TLS_server_method();
-    SSL_CTX *ctx=NULL; /* TODO: figure how to make this from config */
-    char *inner_sni=NULL;
-    char *outer_sni=NULL;
-    int srv=0;
-    char *pemfname=NULL;
-
-    if (!args) return 0;
-
-    pemfname=args->data.str.area;
-
-    //args ? args->data.str.area : NULL,
-				     //args ? args->data.str.data : 0);
-    /*
-     * Do some initial checks to be sure we have an entire CH
-     * before attempting ECH decryption 
-     * Note: code below ignores 3-octet length!
-     */
-
-	if (!smp->strm)
-		goto not_ssl_hello;
-
-	/* meaningless for HTX buffers */
-	if (IS_HTX_STRM(smp->strm))
-		goto not_ssl_hello;
-
-	chn = ((smp->opt & SMP_OPT_DIR) == SMP_OPT_DIR_RES) ? &smp->strm->res : &smp->strm->req;
-	bleft = ci_data(chn);
-	data = (unsigned char *)ci_head(chn);
-    ch=data;
-
-	/* Check for SSL/TLS Handshake */
-	if (!bleft)
-		goto too_short;
-	if (*data != 0x16)
-		goto not_ssl_hello;
-
-	/* Check for SSLv3 or later (SSL version >= 3.0) in the record layer*/
-	if (bleft < 3)
-		goto too_short;
-	if (data[1] < 0x03)
-		goto not_ssl_hello;
-
-	if (bleft < 5)
-		goto too_short;
-	hs_len = (data[3] << 8) + data[4];
-    chlen=hs_len+5;
-	if (hs_len < 1 + 3 + 2 + 32 + 1 + 2 + 2 + 1 + 1 + 2 + 2)
-		goto not_ssl_hello; /* too short to have an extension */
-
-	data += 5; /* enter TLS handshake */
-	bleft -= 5;
-
-	/* Check for a complete client hello starting at <data> */
-	if (bleft < 1)
-		goto too_short;
-	if (data[0] != 0x01) /* msg_type = Client Hello */
-		goto not_ssl_hello;
-
-	/* Check the Hello's length */
-	if (bleft < 4)
-		goto too_short;
-	hs_len = (data[1] << 16) + (data[2] << 8) + data[3];
-	if (hs_len < 2 + 32 + 1 + 2 + 2 + 1 + 1 + 2 + 2)
-		goto not_ssl_hello; /* too short to have an extension */
-
-	/* We want the full handshake here */
-	if (bleft < hs_len)
-		goto too_short;
-
-    /*
-     * Make up SSL_CTX - we'll move this to when cfg is read later
-     */
-    ctx=SSL_CTX_new(meth);
-    if (!ctx) goto not_ssl_hello;
-    srv=SSL_CTX_ech_server_enable(ctx,pemfname);
-    if (srv!=1) {
-        SSL_CTX_free(ctx);
-        goto not_ssl_hello;
-    }
-    /*
-     * Attempt to decrypt and retrieve inner/outer SNI values
-     */
-    srv=SSL_CTX_ech_raw_decrypt(ctx,ch,chlen,newdata,&newlen,&inner_sni,&outer_sni,&decrypted_ok);
-    if (srv==0) goto not_ssl_hello;
-    
-    if (!decrypted_ok) {
-        /*
-         * GREASE or a decrypt fail => leave handling to outer SNI 
-         */
-        smp->data.type = SMP_T_STR;
-        smp->data.u.str.area = outer_sni;
-        smp->data.u.str.data = (outer_sni?strlen(outer_sni):0);
-        //smp->flags = SMP_F_VOLATILE | SMP_F_CONST;
-        smp->flags = SMP_F_VOLATILE ;
-        if (inner_sni) { OPENSSL_free(inner_sni); inner_sni=NULL; }
-    } else { 
-        /* switch on inner SNI */
-        if (outer_sni) { OPENSSL_free(outer_sni); outer_sni=NULL; }
-        smp->data.type = SMP_T_STR;
-        smp->data.u.str.area = inner_sni;
-        smp->data.u.str.data = (inner_sni?strlen(inner_sni):0);
-        //smp->flags = SMP_F_VOLATILE | SMP_F_CONST;
-        smp->flags = SMP_F_VOLATILE ;
-        /* 
-         * Move the inner CH onto the channel 
-         * TODO: find out if this is ok/broken
-         */
-        channel_erase(chn);
-        ci_putblk(chn,(char*)newdata,newlen);
-    }
-
-    if (ctx) { SSL_CTX_free(ctx); ctx=NULL; }
-    return 1;
-
- too_short:
-	smp->flags = SMP_F_MAY_CHANGE;
-
- not_ssl_hello:
-    if (ctx) { SSL_CTX_free(ctx); ctx=NULL; }
-    if (inner_sni) { OPENSSL_free(inner_sni); inner_sni=NULL; }
-    if (outer_sni) { OPENSSL_free(outer_sni); outer_sni=NULL; }
-
-	return 0;
-}
-#endif
 
 /* Try to extract the Application-Layer Protocol Negotiation (ALPN) protocol
  * names that may be presented in a TLS client hello handshake message. As the
@@ -1541,9 +1541,6 @@ static struct sample_fetch_kw_list smp_kws = {ILH, {
 	{ "rdp_cookie_cnt",      smp_fetch_rdp_cookie_cnt, ARG1(0,STR),            NULL,           SMP_T_SINT, SMP_USE_L6REQ },
 	{ "rep_ssl_hello_type",  smp_fetch_ssl_hello_type, 0,                      NULL,           SMP_T_SINT, SMP_USE_L6RES },
 	{ "req_len",             smp_fetch_len,            0,                      NULL,           SMP_T_SINT, SMP_USE_L6REQ },
-#ifndef OPENSSL_NO_ECH
-	{ "req_ssl_ech",         smp_fetch_ssl_hello_ech,  ARG1(0,STR),            NULL,           SMP_T_STR,  SMP_USE_L6REQ },
-#endif
 	{ "req_ssl_hello_type",  smp_fetch_ssl_hello_type, 0,                      NULL,           SMP_T_SINT, SMP_USE_L6REQ },
 	{ "req_ssl_sni",         smp_fetch_ssl_hello_sni,  0,                      NULL,           SMP_T_STR,  SMP_USE_L6REQ },
 	{ "req_ssl_ver",         smp_fetch_req_ssl_ver,    0,                      NULL,           SMP_T_SINT, SMP_USE_L6REQ },

@@ -300,6 +300,9 @@ struct proxy {
 		struct list inspect_rules;      /* inspection rules */
 		struct list l4_rules;           /* layer4 rules */
 		struct list l5_rules;           /* layer5 rules */
+#ifndef OPENSSL_NO_ECH
+        SSL_CTX *ech_ctx;               /* SSL_CTX for ECH decryption */
+#endif
 	} tcp_req;
 	struct {                                /* TCP request processing */
 		unsigned int inspect_delay;     /* inspection delay */
