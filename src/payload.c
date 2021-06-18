@@ -799,13 +799,17 @@ smp_fetch_ssl_hello_ech(const struct arg *args, struct sample *smp, const char *
         smp->data.type = SMP_T_STR;
         smp->data.u.str.area = outer_sni;
         smp->data.u.str.data = (outer_sni?strlen(outer_sni):0);
-        smp->flags = SMP_F_VOLATILE | SMP_F_CONST;
+        //smp->flags = SMP_F_VOLATILE | SMP_F_CONST;
+        smp->flags = SMP_F_VOLATILE ;
+        if (inner_sni) { OPENSSL_free(inner_sni); inner_sni=NULL; }
     } else { 
         /* switch on inner SNI */
+        if (outer_sni) { OPENSSL_free(outer_sni); outer_sni=NULL; }
         smp->data.type = SMP_T_STR;
         smp->data.u.str.area = inner_sni;
         smp->data.u.str.data = (inner_sni?strlen(inner_sni):0);
-        smp->flags = SMP_F_VOLATILE | SMP_F_CONST;
+        //smp->flags = SMP_F_VOLATILE | SMP_F_CONST;
+        smp->flags = SMP_F_VOLATILE ;
         /* 
          * Move the inner CH onto the channel 
          * TODO: find out if this is ok/broken
@@ -815,8 +819,6 @@ smp_fetch_ssl_hello_ech(const struct arg *args, struct sample *smp, const char *
     }
 
     if (ctx) { SSL_CTX_free(ctx); ctx=NULL; }
-    if (inner_sni) { OPENSSL_free(inner_sni); inner_sni=NULL; }
-    if (outer_sni) { OPENSSL_free(outer_sni); outer_sni=NULL; }
     return 1;
 
  too_short:
