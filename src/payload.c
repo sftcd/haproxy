@@ -538,7 +538,7 @@ attempt_split_ech(const struct arg *args, struct sample *smp, const char *kw, vo
     int decrypted_ok=0;
     unsigned char newdata[1024]; /* TODO: alloc a good length */
     size_t newlen=1024;
-    SSL_CTX *ctx=NULL; /* TODO: figure how to make this from config */
+    SSL_CTX *ctx=NULL;
     char *inner_sni=NULL;
     char *outer_sni=NULL;
     int srv=0;
@@ -600,11 +600,9 @@ attempt_split_ech(const struct arg *args, struct sample *smp, const char *kw, vo
 	if (bleft < hs_len)
 		goto too_short;
 
-    /*
-     * Make up SSL_CTX - we'll move this to when cfg is read later
-     */
     if (!smp->px) goto not_ssl_hello; 
     ctx=smp->px->tcp_req.ech_ctx;
+    if (!ctx) goto not_ssl_hello; 
     /*
      * Attempt to decrypt and retrieve inner/outer SNI values
      */
@@ -619,7 +617,6 @@ attempt_split_ech(const struct arg *args, struct sample *smp, const char *kw, vo
         smp->data.type = SMP_T_STR;
         smp->data.u.str.area = outer_sni;
         smp->data.u.str.data = (outer_sni?strlen(outer_sni):0);
-        //smp->flags = SMP_F_VOLATILE | SMP_F_CONST;
         smp->flags = SMP_F_VOLATILE ;
         if (inner_sni) { OPENSSL_free(inner_sni); inner_sni=NULL; }
     } else { 
@@ -628,11 +625,10 @@ attempt_split_ech(const struct arg *args, struct sample *smp, const char *kw, vo
         smp->data.type = SMP_T_STR;
         smp->data.u.str.area = inner_sni;
         smp->data.u.str.data = (inner_sni?strlen(inner_sni):0);
-        //smp->flags = SMP_F_VOLATILE | SMP_F_CONST;
         smp->flags = SMP_F_VOLATILE ;
         /* 
          * Move the inner CH onto the channel 
-         * TODO: find out if this is ok/broken
+         * TODO: fix to handle cases like early data etc.
          */
         channel_erase(chn);
         ci_putblk(chn,(char*)newdata,newlen);
