@@ -1302,7 +1302,7 @@ static int tcp_parse_tcp_req(char **args, int section_type, struct proxy *curpx,
 			memprintf(err, "loading %s %s %s failed - skipping that one %s '%s'",
 			          args[0], args[1], args[2], proxy_type_str(curpx), curpx->id);
         }
-        return 1;
+        return 0;
     }
 #endif
 
