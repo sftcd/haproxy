@@ -609,7 +609,7 @@ attempt_split_ech(const struct arg *args, struct sample *smp, const char *kw, vo
     srv=SSL_CTX_ech_raw_decrypt(ctx,ch,chlen,newdata,&newlen,&inner_sni,&outer_sni,&decrypted_ok);
     if (srv==0) goto not_ssl_hello;
     
-    smp->ctx.i=1; /* remember we tried */
+    smp->ctx.i+=1; /* remember we tried */
     if (!decrypted_ok) {
         /*
          * GREASE or a decrypt fail => leave handling to outer SNI 
@@ -625,7 +625,12 @@ attempt_split_ech(const struct arg *args, struct sample *smp, const char *kw, vo
         smp->data.type = SMP_T_STR;
         smp->data.u.str.area = inner_sni;
         smp->data.u.str.data = (inner_sni?strlen(inner_sni):0);
-        smp->flags = SMP_F_VOLATILE ;
+        if (smp->ctx.i<=1) {
+            /* there could be an HRR so we may not be done */
+            smp->flags = SMP_F_NOT_LAST | SMP_F_VOLATILE ;
+        } else {
+            smp->flags = SMP_F_VOLATILE ;
+        }
         /* 
          * Move the inner CH onto the channel 
          * TODO: fix to handle cases like early data etc.
@@ -695,11 +700,7 @@ smp_fetch_ssl_hello_sni(const struct arg *args, struct sample *smp, const char *
      * If we configured ECH, and haven't yet decrypted, then 
      * attempt decryption.
      */
-    if (smp->px && smp->px->tcp_req.ech_ctx && !smp->ctx.i) {
-        /* 
-         * not correct yet - should only attempt decryption once even if 
-         * lots of rules
-         */
+    if (smp->px && smp->px->tcp_req.ech_ctx && smp->ctx.i<=2) {
         return attempt_split_ech(args, smp, kw, private);
     }
 #endif

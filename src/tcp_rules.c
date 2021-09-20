@@ -1293,7 +1293,7 @@ static int tcp_parse_tcp_req(char **args, int section_type, struct proxy *curpx,
         }
 
         /*
-         * Make up SSL_CTX - we'll move this to when cfg is read later
+         * Make up SSL_CTX 
          */
         if (SSL_CTX_ech_server_enable(curpx->tcp_req.ech_ctx,args[2])!=1) {
             /*
