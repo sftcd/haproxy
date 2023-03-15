@@ -606,7 +606,10 @@ attempt_split_ech(const struct arg *args, struct sample *smp, const char *kw, vo
     /*
      * Attempt to decrypt and retrieve inner/outer SNI values
      */
-    srv=SSL_CTX_ech_raw_decrypt(ctx,ch,chlen,newdata,&newlen,&inner_sni,&outer_sni,&decrypted_ok);
+    srv = SSL_CTX_ech_raw_decrypt(ctx, &decrypted_ok,
+                                  &inner_sni, &outer_sni,
+                                  ch, chlen,
+                                  newdata, &newlen);
     if (srv==0) goto not_ssl_hello;
     
     smp->ctx.i+=1; /* remember we tried */

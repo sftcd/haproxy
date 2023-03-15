@@ -44,6 +44,11 @@
 #include <haproxy/tools-t.h>
 #include <haproxy/uri_auth-t.h>
 #include <haproxy/http_ext-t.h>
+#ifndef OPENSSL_NO_ECH
+/* this may be wrong, not sure */
+#include <haproxy/openssl-compat.h>
+#endif
+
 
 /* values for proxy->mode */
 enum pr_mode {

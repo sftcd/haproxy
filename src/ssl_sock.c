@@ -85,7 +85,6 @@
 #include <haproxy/istbuf.h>
 #include <haproxy/ssl_ocsp.h>
 
-
 /* ***** READ THIS before adding code here! *****
  *
  * Due to API incompatibilities between multiple OpenSSL versions and their
@@ -4084,7 +4083,8 @@ ssl_sock_initial_ctx(struct bind_conf *bind_conf)
         cfgerr += 1;
     }
     if (!cfgerr && bind_conf->ech_filedir) {
-        if (SSL_CTX_ech_server_enable(ctx, bind_conf->ech_filedir)!=1) {
+        int nkeys = 0;
+        if (SSL_CTX_ech_server_enable_dir(ctx, &nkeys, bind_conf->ech_filedir)!=1) {
 		    cfgerr += 1;
         }
     }
