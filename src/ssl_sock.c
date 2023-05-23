@@ -4083,8 +4083,10 @@ ssl_sock_initial_ctx(struct bind_conf *bind_conf)
         cfgerr += 1;
     }
     if (!cfgerr && bind_conf->ech_filedir) {
-        int nkeys = 0;
-        if (SSL_CTX_ech_server_enable_dir(ctx, &nkeys, bind_conf->ech_filedir)!=1) {
+        int loaded = 0;
+
+        if (SSL_CTX_ech_server_enable_dir(ctx, &loaded, bind_conf->ech_filedir,
+                                          SSL_ECH_USE_FOR_RETRY) != 1) {
 		    cfgerr += 1;
         }
     }

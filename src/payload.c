@@ -609,8 +609,10 @@ attempt_split_ech(const struct arg *args, struct sample *smp, const char *kw, vo
     srv = SSL_CTX_ech_raw_decrypt(ctx, &decrypted_ok,
                                   &inner_sni, &outer_sni,
                                   ch, chlen,
-                                  newdata, &newlen);
-    if (srv==0) goto not_ssl_hello;
+                                  newdata, &newlen,
+                                  NULL, NULL);
+    if (srv == 0)
+        goto not_ssl_hello;
     
     smp->ctx.i+=1; /* remember we tried */
     if (!decrypted_ok) {

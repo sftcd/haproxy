@@ -1271,7 +1271,7 @@ static int tcp_parse_tcp_req(char **args, int section_type, struct proxy *curpx,
 	}
 #ifndef OPENSSL_NO_ECH
 	if (strcmp(args[1], "ech-decrypt") == 0) {
-        int nkeys = 0;
+        int loaded = 0;
 
         if (!*args[2]) {
 			memprintf(err,
@@ -1296,7 +1296,8 @@ static int tcp_parse_tcp_req(char **args, int section_type, struct proxy *curpx,
         /*
          * Make up SSL_CTX 
          */
-        if (SSL_CTX_ech_server_enable_dir(curpx->tcp_req.ech_ctx,&nkeys,args[2])!=1) {
+        if (SSL_CTX_ech_server_enable_dir(curpx->tcp_req.ech_ctx, &loaded, 
+                                          args[2], SSL_ECH_USE_FOR_RETRY) != 1) {
             /*
              * Warn that we skipped it
              */
