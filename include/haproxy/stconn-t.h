@@ -26,6 +26,9 @@
 #include <haproxy/connection-t.h>
 #include <haproxy/show_flags-t.h>
 #include <haproxy/xref-t.h>
+#ifndef OPENSSL_NO_ECH
+#include <haproxy/ech-t.h>
+#endif
 
 /* Stream Endpoint Flags.
  * Please also update the se_show_flags() function below in case of changes.
@@ -291,6 +294,9 @@ struct stconn {
 	const struct sc_app_ops *app_ops;    /* general operations used at the app layer */
 	struct sockaddr_storage *src;        /* source address (pool), when known, otherwise NULL */
 	struct sockaddr_storage *dst;        /* destination address (pool), when known, otherwise NULL */
+#ifndef OPENSSL_NO_ECH
+    ech_state_t *ech_state;
+#endif
 };
 
 

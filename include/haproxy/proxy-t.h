@@ -307,6 +307,8 @@ struct proxy {
 		struct list l5_rules;           /* layer5 rules */
 #ifndef OPENSSL_NO_ECH
         SSL_CTX *ech_ctx;               /* SSL_CTX for ECH decryption */
+        unsigned char *ech_hrrtok;      /* hrr token */
+        size_t  tech_oklen;             /* length of above */
 #endif
 	} tcp_req;
 	struct {                                /* TCP request processing */

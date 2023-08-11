@@ -20,6 +20,9 @@
 #include <haproxy/sc_strm.h>
 #include <haproxy/stconn.h>
 #include <haproxy/xref.h>
+#ifndef OPENSSL_NO_ECH
+#include <haproxy/ech.h>
+#endif
 
 DECLARE_POOL(pool_head_connstream, "stconn", sizeof(struct stconn));
 DECLARE_POOL(pool_head_sedesc, "sedesc", sizeof(struct sedesc));
@@ -1367,6 +1370,35 @@ static int sc_conn_recv(struct stconn *sc)
 		 */
 		max = channel_recv_max(ic);
 		ret = conn->mux->rcv_buf(sc, &ic->buf, max, cur_flags);
+#ifndef OPENSSL_NO_ECH
+        /* here we might be able to handle ECH 2nd CH in case of HRR */ 
+        /* figure out what's in sc->sedesc->conn->ctx */
+        /*
+         * If we configured ECH, and haven't yet decrypted, then 
+         * attempt decryption.
+         */
+        if (sc->ech_state != NULL
+            && sc->ech_state->calls == 1) {
+            int dec_ok = 0;
+            unsigned char *data = NULL, *newdata = NULL;
+            size_t bleft = 0, newlen = 0;
+    
+            data = (unsigned char *)b_head(&ic->buf);
+            bleft = b_data(&ic->buf);
+            if ((data[0] == 0x16 || data[0] == 0x14)
+                && attempt_split_ech(sc->ech_state,
+                                  data, bleft,
+                                  &dec_ok,
+                                  &newdata, &newlen) == 1
+                && dec_ok == 1) {
+                /* do stuff */
+                sc->ech_state->calls++;
+                b_reset(&ic->buf);
+                b_putblk(&ic->buf, (char *)newdata, newlen);
+                OPENSSL_free(newdata);
+            }
+        }
+#endif
 
 		if (sc_ep_test(sc, SE_FL_WANT_ROOM)) {
 			/* SE_FL_WANT_ROOM must not be reported if the channel's

@@ -27,7 +27,7 @@
 #include <haproxy/tools.h>
 
 #ifndef OPENSSL_NO_ECH
-#include <openssl/ech.h>
+#include <haproxy/ech.h>
 #endif
 
 
@@ -527,131 +527,94 @@ smp_fetch_req_ssl_ver(const struct arg *args, struct sample *smp, const char *kw
 }
 
 #ifndef OPENSSL_NO_ECH
+
 static int
-attempt_split_ech(const struct arg *args, struct sample *smp, const char *kw, void *private)
+payload_attempt_split_ech(const struct arg *args,
+                          struct sample *smp,
+                          const char *kw,
+                          void *private)
 {
-	int hs_len,bleft;
+	int bleft;
 	struct channel *chn;
 	unsigned char *data;
-    unsigned char *ch;
-    size_t chlen;
     int decrypted_ok=0;
-    unsigned char newdata[1024]; /* TODO: alloc a good length */
+    unsigned char *newdata = NULL;
     size_t newlen=1024;
-    SSL_CTX *ctx=NULL;
-    char *inner_sni=NULL;
-    char *outer_sni=NULL;
     int srv=0;
+    ech_state_t *ech_state = NULL;
+    struct stconn *sc = NULL;
 
     /*
      * Do some initial checks to be sure we have an entire CH
      * before attempting ECH decryption 
-     * Note: code below ignores 3-octet length!
      */
 
 	if (!smp->strm)
 		goto not_ssl_hello;
-
 	/* meaningless for HTX buffers */
 	if (IS_HTX_STRM(smp->strm))
 		goto not_ssl_hello;
-
-	chn = ((smp->opt & SMP_OPT_DIR) == SMP_OPT_DIR_RES) ? &smp->strm->res : &smp->strm->req;
+	chn = ((smp->opt & SMP_OPT_DIR) == SMP_OPT_DIR_RES)
+           ? &smp->strm->res : &smp->strm->req;
 	bleft = ci_data(chn);
 	data = (unsigned char *)ci_head(chn);
-    ch=data;
 
-	/* Check for SSL/TLS Handshake */
-	if (!bleft)
-		goto too_short;
-	if (*data != 0x16)
-		goto not_ssl_hello;
-
-	/* Check for SSLv3 or later (SSL version >= 3.0) in the record layer*/
-	if (bleft < 3)
-		goto too_short;
-	if (data[1] < 0x03)
-		goto not_ssl_hello;
-
-	if (bleft < 5)
-		goto too_short;
-	hs_len = (data[3] << 8) + data[4];
-    chlen=hs_len+5;
-	if (hs_len < 1 + 3 + 2 + 32 + 1 + 2 + 2 + 1 + 1 + 2 + 2)
-		goto not_ssl_hello; /* too short to have an extension */
-
-	data += 5; /* enter TLS handshake */
-	bleft -= 5;
-
-	/* Check for a complete client hello starting at <data> */
-	if (bleft < 1)
-		goto too_short;
-	if (data[0] != 0x01) /* msg_type = Client Hello */
-		goto not_ssl_hello;
-
-	/* Check the Hello's length */
-	if (bleft < 4)
-		goto too_short;
-	hs_len = (data[1] << 16) + (data[2] << 8) + data[3];
-	if (hs_len < 2 + 32 + 1 + 2 + 2 + 1 + 1 + 2 + 2)
-		goto not_ssl_hello; /* too short to have an extension */
-
-	/* We want the full handshake here */
-	if (bleft < hs_len)
-		goto too_short;
-
-    if (!smp->px) goto not_ssl_hello; 
-    ctx=smp->px->tcp_req.ech_ctx;
-    if (!ctx) goto not_ssl_hello; 
-    /*
-     * Attempt to decrypt and retrieve inner/outer SNI values
-     */
-    srv = SSL_CTX_ech_raw_decrypt(ctx, &decrypted_ok,
-                                  &inner_sni, &outer_sni,
-                                  ch, chlen,
-                                  newdata, &newlen,
-                                  NULL, NULL);
-    if (srv == 0)
-        goto not_ssl_hello;
-    
-    smp->ctx.i+=1; /* remember we tried */
-    if (!decrypted_ok) {
-        /*
-         * GREASE or a decrypt fail => leave handling to outer SNI 
-         */
-        smp->data.type = SMP_T_STR;
-        smp->data.u.str.area = outer_sni;
-        smp->data.u.str.data = (outer_sni?strlen(outer_sni):0);
-        smp->flags = SMP_F_VOLATILE ;
-        if (inner_sni) { OPENSSL_free(inner_sni); inner_sni=NULL; }
-    } else { 
-        /* switch on inner SNI */
-        if (outer_sni) { OPENSSL_free(outer_sni); outer_sni=NULL; }
-        smp->data.type = SMP_T_STR;
-        smp->data.u.str.area = inner_sni;
-        smp->data.u.str.data = (inner_sni?strlen(inner_sni):0);
-        if (smp->ctx.i<=1) {
-            /* there could be an HRR so we may not be done */
-            smp->flags = SMP_F_NOT_LAST | SMP_F_VOLATILE ;
-        } else {
-            smp->flags = SMP_F_VOLATILE ;
+    if (smp->ctx.a[0] != NULL) {
+        ech_state = (ech_state_t*) smp->ctx.a[0];
+        if (ech_state->calls > 0
+            && ech_state->inner_sni != NULL) {
+            /* we did ECH decrypt already so no need again */
+            ech_state->calls++;
+            /* switch on inner SNI */
+            smp->data.type = SMP_T_STR;
+            smp->data.u.str.area = ech_state->inner_sni;
+            smp->data.u.str.data = strlen(ech_state->inner_sni);
+            // smp->flags = SMP_F_NOT_LAST | SMP_F_VOLATILE ;
+            // smp->flags = SMP_F_VOLATILE ;
+            smp->flags = SMP_F_VOLATILE | SMP_F_CONST;
+            return 1;
         }
-        /* 
-         * Move the inner CH onto the channel 
-         * TODO: fix to handle cases like early data etc.
-         */
-        channel_erase(chn);
-        ci_putblk(chn,(char*)newdata,newlen);
     }
 
-    return 1;
+    /* TODO: need to figure out where to free this when finally done */
+    ech_state = (ech_state_t*) OPENSSL_zalloc(sizeof(ech_state_t));
+    if (ech_state == NULL)
+        goto not_ssl_hello;
+    ech_state->ctx = smp->px->tcp_req.ech_ctx;
+    smp->ctx.a[0] = (void *)ech_state;
+
+    srv = attempt_split_ech(ech_state,
+                            data, bleft,
+                            &decrypted_ok,
+                            &newdata, &newlen);
+    if (srv == 0)
+        goto not_ssl_hello;
+    if (decrypted_ok) {
+        ech_state->calls++;
+        /* switch on inner SNI */
+        smp->data.type = SMP_T_STR;
+        smp->data.u.str.area = ech_state->inner_sni;
+        smp->data.u.str.data = (ech_state->inner_sni ?
+                                    strlen(ech_state->inner_sni)
+                                    : 0);
+        //smp->flags = SMP_F_NOT_LAST | SMP_F_VOLATILE ;
+        // smp->flags = SMP_F_VOLATILE ;
+        smp->flags = SMP_F_CONST;
+        /* Move the inner CH onto the channel */
+        channel_erase(chn);
+        ci_putblk(chn,(char*)newdata,newlen);
+        /* TODO: fix to handle early data */
+        /* store ECH state in case of HRR */
+        sc = chn_prod(chn);
+        sc->ech_state = ech_state;
+        OPENSSL_free(newdata);
+        return 1;
+    }
 
  too_short:
 	smp->flags = SMP_F_MAY_CHANGE;
 
  not_ssl_hello:
-    if (inner_sni) { OPENSSL_free(inner_sni); inner_sni=NULL; }
-    if (outer_sni) { OPENSSL_free(outer_sni); outer_sni=NULL; }
 
 	return 0;
 }
@@ -702,11 +665,25 @@ smp_fetch_ssl_hello_sni(const struct arg *args, struct sample *smp, const char *
 
 #ifndef OPERNSSL_NO_ECH
     /*
-     * If we configured ECH, and haven't yet decrypted, then 
-     * attempt decryption.
+     * If we configured ECH, then attempt decryption.
+     * Even when ECH decryption worked, this may be called
+     * twice (or more), e.g. if we have two backends, one for 
+     * the public_name and one for the inner SNI.
+     * Even if called multiple times, things should be ok
+     * though, as the additional calls won't work given the
+     * inner CH will have replaced the outer CH after the
+     * first call, but no harm should ensue. (The overhead
+     * should also be ok, as we won't do crypto after the
+     * 1st ECH decryption since the inner CH will flag
+     * that it is an inner CH.)
+     * side note: those multiple calls confused me a lot;-)
+     * TODO: consider a malformed inner CH that contains
+     * another layer of ECH decryption or doesn't have the
+     * is-inner flag in the CH extension.
      */
-    if (smp->px && smp->px->tcp_req.ech_ctx && smp->ctx.i<=2) {
-        return attempt_split_ech(args, smp, kw, private);
+    if (smp->px && smp->px->tcp_req.ech_ctx && smp->ctx.a[0] == NULL
+        && payload_attempt_split_ech(args, smp, kw, private) == 1) {
+            return 1;
     }
 #endif
 
