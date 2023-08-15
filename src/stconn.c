@@ -148,6 +148,9 @@ static struct stconn *sc_new(struct sedesc *sedesc)
 	sc->dst = NULL;
 	sc->wait_event.tasklet = NULL;
 	sc->wait_event.events = 0;
+#ifndef OPENSSL_NO_ECH
+    sc->ech_state = NULL;
+#endif
 
 	/* If there is no endpoint, allocate a new one now */
 	if (!sedesc) {
