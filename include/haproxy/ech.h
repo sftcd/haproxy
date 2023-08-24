@@ -30,4 +30,6 @@ int attempt_split_ech(ech_state_t *ech_state,
                       int *dec_ok,
                       unsigned char **newdata, size_t *newlen);
 
+void ech_state_free(ech_state_t *st);
+
 #endif /* _HAPROXY_ECH_H */

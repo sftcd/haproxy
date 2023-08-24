@@ -21,6 +21,7 @@
 #include <haproxy/stconn.h>
 #include <haproxy/xref.h>
 #ifndef OPENSSL_NO_ECH
+#include <haproxy/log.h>
 #include <haproxy/ech.h>
 #endif
 
@@ -241,6 +242,12 @@ void sc_free(struct stconn *sc)
 		sedesc_free(sc->sedesc);
 	}
 	tasklet_free(sc->wait_event.tasklet);
+#ifndef OPENSSL_NO_ECH
+    if (sc->ech_state != NULL) {
+        ech_state_free(sc->ech_state);
+        sc->ech_state=NULL;
+    }
+#endif
 	pool_free(pool_head_connstream, sc);
 }
 
@@ -1374,10 +1381,8 @@ static int sc_conn_recv(struct stconn *sc)
 		max = channel_recv_max(ic);
 		ret = conn->mux->rcv_buf(sc, &ic->buf, max, cur_flags);
 #ifndef OPENSSL_NO_ECH
-        /* here we might be able to handle ECH 2nd CH in case of HRR */ 
-        /* figure out what's in sc->sedesc->conn->ctx */
         /*
-         * If we configured ECH, and haven't yet decrypted, then 
+         * If we configured ECH, and maybe hit HRR, then
          * attempt decryption.
          */
         if (sc->ech_state != NULL
@@ -1385,7 +1390,12 @@ static int sc_conn_recv(struct stconn *sc)
             int dec_ok = 0;
             unsigned char *data = NULL, *newdata = NULL;
             size_t bleft = 0, newlen = 0;
-    
+            /* add these for logging
+	        struct stream *s = __sc_strm(sc);
+	        struct proxy *frontend = strm_fe(s);
+            send_log(frontend, LOG_INFO, "Got here");
+            */
+
             data = (unsigned char *)b_head(&ic->buf);
             bleft = b_data(&ic->buf);
             if ((data[0] == 0x16 || data[0] == 0x14)
@@ -1394,12 +1404,18 @@ static int sc_conn_recv(struct stconn *sc)
                                   &dec_ok,
                                   &newdata, &newlen) == 1
                 && dec_ok == 1) {
+            
+                /* send_log(frontend, LOG_INFO, "Got there"); */
+
                 /* do stuff */
                 sc->ech_state->calls++;
                 b_reset(&ic->buf);
                 b_putblk(&ic->buf, (char *)newdata, newlen);
                 OPENSSL_free(newdata);
-            }
+                /* we're done with this now */
+                ech_state_free(sc->ech_state);
+                sc->ech_state = NULL;
+            } 
         }
 #endif
 

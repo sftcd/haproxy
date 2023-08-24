@@ -21,6 +21,7 @@ int attempt_split_ech(ech_state_t *ech_state,
     size_t chlen = 0, hs_len = 0;
     unsigned char *ch = data, *orig = data;
     int srv = 0, isccs = 0;
+    char *newinner = NULL, *newouter = NULL;
 
 	/* Check for SSL/TLS Handshake */
 	if (!bleft)
@@ -71,13 +72,77 @@ int attempt_split_ech(ech_state_t *ech_state,
     }
     /* Attempt to decrypt and retrieve inner/outer SNI values */
     srv = SSL_CTX_ech_raw_decrypt(ech_state->ctx, dec_ok,
-                                  &ech_state->inner_sni, &ech_state->outer_sni,
+                                  &newinner, &newouter,
                                   ch, chlen,
                                   (*newdata + (isccs ? 6 : 0)), newlen,
                                   &ech_state->hrrtok, &ech_state->toklen);
     if (srv != 1)
         OPENSSL_free(*newdata);
+    if (srv == 1 && isccs)
+        *newlen += 6;
+
+    /* check/copy new inner */
+    if (srv == 1 && ech_state->inner_sni != NULL) {
+        if (newinner == NULL) {
+            /* error - TOD: log & clean up */
+            return 0;
+        } else {
+            size_t nilen = strlen(newinner);
+            size_t oilen = strlen(ech_state->inner_sni);
+            if (nilen != oilen) {
+                /* error - TOD: log & clean up */
+                return 0;
+            } 
+            if (strncmp(newinner, ech_state->inner_sni, nilen)) {
+                /* error - TOD: log & clean up */
+                return 0;
+            }
+            OPENSSL_free(newinner);
+        }
+    } else {
+        if (newinner != NULL) {
+            /* error - TOD: log & clean up */
+            return 0;
+        }
+    }
+
+    /* check/copy new outer */
+    if (srv == 1 && ech_state->outer_sni != NULL) {
+        if (newouter == NULL) {
+            /* error - TOD: log & clean up */
+            return 0;
+        } else {
+            size_t nilen = strlen(newouter);
+            size_t oilen = strlen(ech_state->outer_sni);
+            if (nilen != oilen) {
+                /* error - TOD: log & clean up */
+                return 0;
+            } 
+            if (strncmp(newouter, ech_state->outer_sni, nilen)) {
+                /* error - TOD: log & clean up */
+                return 0;
+            }
+            OPENSSL_free(newouter);
+        }
+    } else {
+        if (newouter != NULL) {
+            /* error - TOD: log & clean up */
+            return 0;
+        }
+    }
+
     return srv;
 err:
     return 0;
+}
+
+void ech_state_free(ech_state_t *st)
+{
+    if (st == NULL)
+        return;
+    /* st->ctx is a shallow copy, so doesn't need freeing */
+    OPENSSL_free(st->hrrtok);
+    OPENSSL_free(st->inner_sni);
+    OPENSSL_free(st->outer_sni);
+    return;
 }
