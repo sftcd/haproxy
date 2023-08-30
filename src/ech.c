@@ -13,12 +13,53 @@
 #include <haproxy/buf-t.h>
 #include <haproxy/ech.h>
 
+static int innerouter_cmp(ech_state_t *ech_state, char *io, int isinner)
+{
+    char *svar = NULL;
+
+    if (isinner == 1 && ech_state->calls == 0) {
+        ech_state->inner_sni = io;
+        return 1;
+    }
+    if (isinner == 0 && ech_state->calls == 0) {
+        ech_state->outer_sni = io;
+        return 1;
+    }
+
+    if (isinner) 
+        svar = ech_state->inner_sni;
+    else
+        svar = ech_state->outer_sni;
+    /* check/copy new inner */
+    if (svar != NULL) {
+        if (io == NULL) {
+            return 0;
+        } else {
+            size_t iolen = strlen(io);
+            size_t slen = strlen(svar);
+            if (iolen != slen) {
+                return 0;
+            } 
+            if (strncmp(io, svar, slen)) {
+                return 0;
+            }
+            OPENSSL_free(io);
+        }
+    } else {
+        if (io != NULL) {
+            OPENSSL_free(io);
+            return 0;
+        }
+    }
+    return 1;
+}
+
 int attempt_split_ech(ech_state_t *ech_state,
                       unsigned char *data, size_t bleft,
                       int *dec_ok,
                       unsigned char **newdata, size_t *newlen)
 {
-    size_t chlen = 0, hs_len = 0;
+    size_t chlen = 0, hs_len = 0, extra_data = 0;
     unsigned char *ch = data, *orig = data;
     int srv = 0, isccs = 0;
     char *newinner = NULL, *newouter = NULL;
@@ -60,10 +101,12 @@ int attempt_split_ech(ech_state_t *ech_state,
 	if (hs_len < 2 + 32 + 1 + 2 + 2 + 1 + 1 + 2 + 2)
 		goto err;
 	/* We want the full handshake here */
-    /* TODO: maybe handle early data here? */
 	if (bleft < hs_len)
 		goto err;
-    *newlen = chlen + (isccs ? 6 : 0);
+    /* handle early data */
+    if (bleft > chlen)
+        extra_data = bleft - chlen;
+    *newlen = chlen + (isccs ? 6 : 0) + extra_data;
     *newdata = OPENSSL_malloc(*newlen);
     if (*newdata == NULL)
 		goto err;
@@ -76,62 +119,26 @@ int attempt_split_ech(ech_state_t *ech_state,
                                   ch, chlen,
                                   (*newdata + (isccs ? 6 : 0)), newlen,
                                   &ech_state->hrrtok, &ech_state->toklen);
-    if (srv != 1)
+    if (srv != 1) {
         OPENSSL_free(*newdata);
+        return srv;
+    }
     if (srv == 1 && isccs)
         *newlen += 6;
-
-    /* check/copy new inner */
-    if (srv == 1 && ech_state->inner_sni != NULL) {
-        if (newinner == NULL) {
-            /* error - TOD: log & clean up */
-            return 0;
-        } else {
-            size_t nilen = strlen(newinner);
-            size_t oilen = strlen(ech_state->inner_sni);
-            if (nilen != oilen) {
-                /* error - TOD: log & clean up */
-                return 0;
-            } 
-            if (strncmp(newinner, ech_state->inner_sni, nilen)) {
-                /* error - TOD: log & clean up */
-                return 0;
-            }
-            OPENSSL_free(newinner);
-        }
-    } else {
-        if (newinner != NULL) {
-            /* error - TOD: log & clean up */
-            return 0;
-        }
+    /* add back early data if it was there */
+    if (extra_data > 0) {
+        memcpy(*newdata + (isccs ? 6 : 0) + *newlen,
+               orig + (isccs ? 6: 0) + chlen, extra_data);
+        *newlen += extra_data;
     }
 
-    /* check/copy new outer */
-    if (srv == 1 && ech_state->outer_sni != NULL) {
-        if (newouter == NULL) {
-            /* error - TOD: log & clean up */
-            return 0;
-        } else {
-            size_t nilen = strlen(newouter);
-            size_t oilen = strlen(ech_state->outer_sni);
-            if (nilen != oilen) {
-                /* error - TOD: log & clean up */
-                return 0;
-            } 
-            if (strncmp(newouter, ech_state->outer_sni, nilen)) {
-                /* error - TOD: log & clean up */
-                return 0;
-            }
-            OPENSSL_free(newouter);
-        }
-    } else {
-        if (newouter != NULL) {
-            /* error - TOD: log & clean up */
-            return 0;
-        }
-    }
-
-    return srv;
+    srv = innerouter_cmp(ech_state, newinner, 1);
+    if (srv != 1)
+        return srv;
+    srv = innerouter_cmp(ech_state, newouter, 0);
+    if (srv != 1)
+        return srv;
+    return 1;
 err:
     return 0;
 }

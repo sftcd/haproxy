@@ -27,6 +27,7 @@
 #include <haproxy/tools.h>
 
 #ifndef OPENSSL_NO_ECH
+#include <haproxy/log.h>
 #include <haproxy/ech.h>
 #endif
 
@@ -543,12 +544,14 @@ payload_attempt_split_ech(const struct arg *args,
     int srv=0;
     ech_state_t *ech_state = NULL;
     struct stconn *sc = NULL;
+    /* next two just for logging */
+    struct stream *s = NULL;
+    struct proxy *frontend = NULL;
 
     /*
      * Do some initial checks to be sure we have an entire CH
      * before attempting ECH decryption 
      */
-
 	if (!smp->strm)
 		goto not_ssl_hello;
 	/* meaningless for HTX buffers */
@@ -558,6 +561,10 @@ payload_attempt_split_ech(const struct arg *args,
            ? &smp->strm->res : &smp->strm->req;
 	bleft = ci_data(chn);
 	data = (unsigned char *)ci_head(chn);
+
+    sc = chn_prod(chn);
+    s = __sc_strm(sc);
+    frontend = strm_fe(s);
 
     if (smp->ctx.a[0] != NULL) {
         ech_state = (ech_state_t*) smp->ctx.a[0];
@@ -569,26 +576,27 @@ payload_attempt_split_ech(const struct arg *args,
             smp->data.type = SMP_T_STR;
             smp->data.u.str.area = ech_state->inner_sni;
             smp->data.u.str.data = strlen(ech_state->inner_sni);
-            // smp->flags = SMP_F_NOT_LAST | SMP_F_VOLATILE ;
-            // smp->flags = SMP_F_VOLATILE ;
             smp->flags = SMP_F_VOLATILE | SMP_F_CONST;
             return 1;
         }
     }
 
-    /* TODO: need to figure out where to free this when finally done */
     ech_state = (ech_state_t*) OPENSSL_zalloc(sizeof(ech_state_t));
     if (ech_state == NULL)
         goto not_ssl_hello;
     ech_state->ctx = smp->px->tcp_req.ech_ctx;
     smp->ctx.a[0] = (void *)ech_state;
 
+    send_log(frontend, LOG_INFO, "Will attempt split-mode ECH decryption.");
+
     srv = attempt_split_ech(ech_state,
                             data, bleft,
                             &decrypted_ok,
                             &newdata, &newlen);
-    if (srv == 0)
+    if (srv == 0) {
+        send_log(frontend, LOG_INFO, "Split-mode ECH decryption call failed");
         goto not_ssl_hello;
+    }
     if (decrypted_ok) {
         ech_state->calls++;
         /* switch on inner SNI */
@@ -597,18 +605,17 @@ payload_attempt_split_ech(const struct arg *args,
         smp->data.u.str.data = (ech_state->inner_sni ?
                                     strlen(ech_state->inner_sni)
                                     : 0);
-        //smp->flags = SMP_F_NOT_LAST | SMP_F_VOLATILE ;
-        // smp->flags = SMP_F_VOLATILE ;
         smp->flags = SMP_F_CONST;
+        send_log(frontend, LOG_INFO, "Split-mode ECH decryption succeeded.");
         /* Move the inner CH onto the channel */
         channel_erase(chn);
         ci_putblk(chn,(char*)newdata,newlen);
-        /* TODO: fix to handle early data */
         /* store ECH state in case of HRR */
-        sc = chn_prod(chn);
         sc->ech_state = ech_state;
         OPENSSL_free(newdata);
         return 1;
+    } else {
+        send_log(frontend, LOG_INFO, "Split-mode ECH decryption failed.");
     }
 
  too_short:
