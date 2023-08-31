@@ -105,7 +105,7 @@ int attempt_split_ech(ech_state_t *ech_state,
 		goto err;
     /* handle early data */
     if (bleft > chlen)
-        extra_data = bleft - chlen;
+        extra_data = bleft + 5 - chlen;
     *newlen = chlen + (isccs ? 6 : 0) + extra_data;
     *newdata = OPENSSL_malloc(*newlen);
     if (*newdata == NULL)
