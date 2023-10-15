@@ -1390,10 +1390,12 @@ static int sc_conn_recv(struct stconn *sc)
             int dec_ok = 0;
             unsigned char *data = NULL, *newdata = NULL;
             size_t bleft = 0, newlen = 0;
-            
+#undef ECHDOLOG
+#ifdef ECHDOLOG
 	        struct stream *s = __sc_strm(sc);
 	        struct proxy *frontend = strm_fe(s);
             send_log(frontend, LOG_INFO, "Will check split-mode ECH decryption (2nd CH/HRR)");
+#endif
 
             data = (unsigned char *)b_head(&ic->buf);
             bleft = b_data(&ic->buf);
@@ -1403,9 +1405,9 @@ static int sc_conn_recv(struct stconn *sc)
                                   &dec_ok,
                                   &newdata, &newlen) == 1
                 && dec_ok == 1) {
-            
+#ifdef ECHDOLOG
                 send_log(frontend, LOG_INFO, "Split-mode ECH decryption success (2nd CH/HRR)");
-
+#endif
                 /* do stuff */
                 sc->ech_state->calls++;
                 b_reset(&ic->buf);
@@ -1414,9 +1416,12 @@ static int sc_conn_recv(struct stconn *sc)
                 /* we're done with this now */
                 ech_state_free(sc->ech_state);
                 sc->ech_state = NULL;
-            } else {
+            }
+#ifdef ECHDOLOG
+             else {
                 send_log(frontend, LOG_INFO, "Split-mode ECH decryption error or not needed (2nd CH/HRR)");
             }
+#endif
         }
 #endif
 

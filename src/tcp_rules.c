@@ -1279,10 +1279,7 @@ static int tcp_parse_tcp_req(char **args, int section_type, struct proxy *curpx,
 			          args[0], args[1], proxy_type_str(curpx), curpx->id);
             return -1;
         }
-
-        /*
-         * Create or add-to the SSL_CTX with those ECH key pairs
-         */
+        /* Create or add-to the SSL_CTX with those ECH key pairs */
         if (!curpx->tcp_req.ech_ctx) {
             const SSL_METHOD *meth = TLS_server_method();
             curpx->tcp_req.ech_ctx=SSL_CTX_new(meth);
@@ -1292,18 +1289,15 @@ static int tcp_parse_tcp_req(char **args, int section_type, struct proxy *curpx,
                 return -1;
             }
         }
-
-        /*
-         * Make up SSL_CTX 
-         */
-        if (SSL_CTX_ech_server_enable_dir(curpx->tcp_req.ech_ctx, &loaded, 
+        /* Add ECH keys to SSL_CTX */
+        if (SSL_CTX_ech_server_enable_dir(curpx->tcp_req.ech_ctx, &loaded,
                                           args[2], SSL_ECH_USE_FOR_RETRY) != 1) {
-            /*
-             * Warn that we skipped it
-             */
+            /* Warn that we skipped it */
 			memprintf(err, "loading %s %s %s failed - skipping that one %s '%s'",
 			          args[0], args[1], args[2], proxy_type_str(curpx), curpx->id);
-        }
+        } else
+            ha_notice("%s %s worked - loaded %d keys from %s for %s '%s'\n",
+                  args[0], args[1], loaded, args[2], proxy_type_str(curpx), curpx->id);
         return 0;
     }
 #endif

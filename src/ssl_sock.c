@@ -4088,7 +4088,11 @@ ssl_sock_initial_ctx(struct bind_conf *bind_conf)
         if (SSL_CTX_ech_server_enable_dir(ctx, &loaded, bind_conf->ech_filedir,
                                           SSL_ECH_USE_FOR_RETRY) != 1) {
 		    cfgerr += 1;
+		    ha_alert("Proxy '%s': failed to load ECH key s from %s for '%s' at [%s:%d].\n",
+			    bind_conf->frontend->id, bind_conf->ech_filedir, bind_conf->arg, bind_conf->file, bind_conf->line);
         }
+		ha_notice("Proxy '%s': loaded %d ECH keys from %s for bind '%s' at [%s:%d]\n",
+			   bind_conf->frontend->id, loaded, bind_conf->ech_filedir, bind_conf->arg, bind_conf->file, bind_conf->line);
     }
 #endif
 

@@ -544,9 +544,12 @@ payload_attempt_split_ech(const struct arg *args,
     int srv=0;
     ech_state_t *ech_state = NULL;
     struct stconn *sc = NULL;
+#undef ECHDOLOG
+#ifdef ECHDOLOG
     /* next two just for logging */
     struct stream *s = NULL;
     struct proxy *frontend = NULL;
+#endif
 
     /*
      * Do some initial checks to be sure we have an entire CH
@@ -563,8 +566,10 @@ payload_attempt_split_ech(const struct arg *args,
 	data = (unsigned char *)ci_head(chn);
 
     sc = chn_prod(chn);
+#ifdef ECHDOLOG
     s = __sc_strm(sc);
     frontend = strm_fe(s);
+#endif
 
     if (smp->ctx.a[0] != NULL) {
         ech_state = (ech_state_t*) smp->ctx.a[0];
@@ -586,15 +591,18 @@ payload_attempt_split_ech(const struct arg *args,
         goto not_ssl_hello;
     ech_state->ctx = smp->px->tcp_req.ech_ctx;
     smp->ctx.a[0] = (void *)ech_state;
-
+#ifdef ECHDOLOG
     send_log(frontend, LOG_INFO, "Will attempt split-mode ECH decryption.");
+#endif
 
     srv = attempt_split_ech(ech_state,
                             data, bleft,
                             &decrypted_ok,
                             &newdata, &newlen);
     if (srv == 0) {
+#ifdef ECHDOLOG
         send_log(frontend, LOG_INFO, "Split-mode ECH decryption call failed");
+#endif
         goto not_ssl_hello;
     }
     if (decrypted_ok) {
@@ -606,7 +614,9 @@ payload_attempt_split_ech(const struct arg *args,
                                     strlen(ech_state->inner_sni)
                                     : 0);
         smp->flags = SMP_F_CONST;
+#ifdef ECHDOLOG
         send_log(frontend, LOG_INFO, "Split-mode ECH decryption succeeded.");
+#endif
         /* Move the inner CH onto the channel */
         channel_erase(chn);
         ci_putblk(chn,(char*)newdata,newlen);
@@ -614,9 +624,12 @@ payload_attempt_split_ech(const struct arg *args,
         sc->ech_state = ech_state;
         OPENSSL_free(newdata);
         return 1;
-    } else {
+    }
+#ifdef ECHDOLOG
+     else {
         send_log(frontend, LOG_INFO, "Split-mode ECH decryption failed.");
     }
+#endif
 
  too_short:
 	smp->flags = SMP_F_MAY_CHANGE;
