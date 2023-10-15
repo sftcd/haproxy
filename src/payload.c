@@ -544,7 +544,7 @@ payload_attempt_split_ech(const struct arg *args,
     int srv=0;
     ech_state_t *ech_state = NULL;
     struct stconn *sc = NULL;
-#undef ECHDOLOG
+#define ECHDOLOG
 #ifdef ECHDOLOG
     /* next two just for logging */
     struct stream *s = NULL;
