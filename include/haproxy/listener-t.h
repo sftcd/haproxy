@@ -148,7 +148,7 @@ struct ssl_bind_conf {
 	char *client_sigalgs;      /* Client Signature algorithms */
 	struct tls_version_filter ssl_methods_cfg; /* original ssl methods found in configuration */
 	struct tls_version_filter ssl_methods; /* actual ssl methods used at runtime */
-#ifndef OPENSSL_NO_ECH
+#ifdef USE_ECH
     char *ech_filedir;             /* ECH config, file (or TODO: directory) name */
 #endif
 #endif
@@ -183,7 +183,7 @@ struct bind_conf {
 	char *ca_sign_pass;        /* CAKey passphrase */
 
 	struct ckch_data *ca_sign_ckch;	/* CA and possible certificate chain for ca generation */
-#ifndef OPENSSL_NO_ECH
+#ifdef USE_ECH
     char *ech_filedir;             /* ECH config, file (or TODO: directory) name */
 #endif
 #endif

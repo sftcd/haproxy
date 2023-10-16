@@ -20,10 +20,12 @@
  */
 
 #ifndef _HAPROXY_ECH_H
-#define _HAPROXY_ECH_H
+# define _HAPROXY_ECH_H
+# ifdef USE_ECH
 
-#include <haproxy/ech-t.h>
-#include <openssl/ech.h>
+#  include <haproxy/ech-t.h>
+#  include <openssl/ech.h>
+
  
 int attempt_split_ech(ech_state_t *ech_state,
                       unsigned char *data, size_t bleft,
@@ -32,4 +34,5 @@ int attempt_split_ech(ech_state_t *ech_state,
 
 void ech_state_free(ech_state_t *st);
 
+# endif /* USE_ECH */
 #endif /* _HAPROXY_ECH_H */

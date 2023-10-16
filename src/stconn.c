@@ -20,7 +20,7 @@
 #include <haproxy/sc_strm.h>
 #include <haproxy/stconn.h>
 #include <haproxy/xref.h>
-#ifndef OPENSSL_NO_ECH
+#ifdef USE_ECH
 #include <haproxy/log.h>
 #include <haproxy/ech.h>
 #endif
@@ -149,7 +149,7 @@ static struct stconn *sc_new(struct sedesc *sedesc)
 	sc->dst = NULL;
 	sc->wait_event.tasklet = NULL;
 	sc->wait_event.events = 0;
-#ifndef OPENSSL_NO_ECH
+#ifdef USE_ECH
     sc->ech_state = NULL;
 #endif
 
@@ -242,7 +242,7 @@ void sc_free(struct stconn *sc)
 		sedesc_free(sc->sedesc);
 	}
 	tasklet_free(sc->wait_event.tasklet);
-#ifndef OPENSSL_NO_ECH
+#ifdef USE_ECH
     if (sc->ech_state != NULL) {
         ech_state_free(sc->ech_state);
         sc->ech_state=NULL;
@@ -1380,7 +1380,7 @@ static int sc_conn_recv(struct stconn *sc)
 		 */
 		max = channel_recv_max(ic);
 		ret = conn->mux->rcv_buf(sc, &ic->buf, max, cur_flags);
-#ifndef OPENSSL_NO_ECH
+#ifdef USE_ECH
         /*
          * If we configured ECH, and maybe hit HRR, then
          * attempt decryption.
@@ -1390,10 +1390,11 @@ static int sc_conn_recv(struct stconn *sc)
             int dec_ok = 0;
             unsigned char *data = NULL, *newdata = NULL;
             size_t bleft = 0, newlen = 0;
-#define ECHDOLOG
+#undef ECHDOLOG
 #ifdef ECHDOLOG
 	        struct stream *s = __sc_strm(sc);
 	        struct proxy *frontend = strm_fe(s);
+
             send_log(frontend, LOG_INFO, "Will check split-mode ECH decryption (2nd CH/HRR)");
 #endif
 

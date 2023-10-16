@@ -10,8 +10,10 @@
  *
  */
 
-#include <haproxy/buf-t.h>
-#include <haproxy/ech.h>
+#ifdef USE_ECH
+
+# include <haproxy/buf-t.h>
+# include <haproxy/ech.h>
 
 static int innerouter_cmp(ech_state_t *ech_state, char *io, int isinner)
 {
@@ -153,3 +155,5 @@ void ech_state_free(ech_state_t *st)
     OPENSSL_free(st->outer_sni);
     return;
 }
+
+#endif /* USE_ECH */

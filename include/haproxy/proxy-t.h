@@ -44,7 +44,7 @@
 #include <haproxy/tools-t.h>
 #include <haproxy/uri_auth-t.h>
 #include <haproxy/http_ext-t.h>
-#ifndef OPENSSL_NO_ECH
+#ifdef USE_ECH
 /* this may be wrong, not sure */
 #include <haproxy/openssl-compat.h>
 #endif
@@ -305,7 +305,7 @@ struct proxy {
 		struct list inspect_rules;      /* inspection rules */
 		struct list l4_rules;           /* layer4 rules */
 		struct list l5_rules;           /* layer5 rules */
-#ifndef OPENSSL_NO_ECH
+#ifdef USE_ECH
         SSL_CTX *ech_ctx;               /* SSL_CTX for ECH decryption */
         unsigned char *ech_hrrtok;      /* hrr token */
         size_t  tech_oklen;             /* length of above */

@@ -26,7 +26,7 @@
 #include <haproxy/stconn.h>
 #include <haproxy/tools.h>
 
-#ifndef OPENSSL_NO_ECH
+#ifdef USE_ECH
 #include <haproxy/log.h>
 #include <haproxy/ech.h>
 #endif
@@ -527,7 +527,7 @@ smp_fetch_req_ssl_ver(const struct arg *args, struct sample *smp, const char *kw
 	return 0;
 }
 
-#ifndef OPENSSL_NO_ECH
+#ifdef USE_ECH
 
 static int
 payload_attempt_split_ech(const struct arg *args,
@@ -544,7 +544,7 @@ payload_attempt_split_ech(const struct arg *args,
     int srv=0;
     ech_state_t *ech_state = NULL;
     struct stconn *sc = NULL;
-#define ECHDOLOG
+#undef ECHDOLOG
 #ifdef ECHDOLOG
     /* next two just for logging */
     struct stream *s = NULL;
@@ -683,7 +683,7 @@ smp_fetch_ssl_hello_sni(const struct arg *args, struct sample *smp, const char *
 	if (!smp->strm)
 		goto not_ssl_hello;
 
-#ifndef OPERNSSL_NO_ECH
+#ifdef USE_ECH
     /*
      * If we configured ECH, then attempt decryption.
      * Even when ECH decryption worked, this may be called

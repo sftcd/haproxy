@@ -4077,8 +4077,7 @@ ssl_sock_initial_ctx(struct bind_conf *bind_conf)
 	ctx = SSL_CTX_new(SSLv23_server_method());
 	bind_conf->initial_ctx = ctx;
 
-
-#ifndef OPENSSL_NO_ECH
+#ifdef USE_ECH
     if (!ctx) {
         cfgerr += 1;
     }
@@ -5426,14 +5425,14 @@ int ssl_sock_prepare_bind_conf(struct bind_conf *bind_conf)
 				   px->id, bind_conf->arg, bind_conf->file, bind_conf->line);
 		}
 		else {
-#ifndef OPENSSL_NO_ECH
+#ifdef USE_ECH
             if (!bind_conf->ech_filedir) {
 #endif
 			ha_alert("Proxy '%s': no SSL certificate specified for bind '%s' at [%s:%d] (use 'crt').\n",
 				 px->id, bind_conf->arg, bind_conf->file, bind_conf->line);
 			return -1;
 		}
-#ifndef OPENSSL_NO_ECH
+#ifdef USE_ECH
         }
 #endif
 	}

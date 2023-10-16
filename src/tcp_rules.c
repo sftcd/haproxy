@@ -1269,7 +1269,7 @@ static int tcp_parse_tcp_req(char **args, int section_type, struct proxy *curpx,
 		memprintf(err, "parsing [%s:%d] : out of memory", file, line);
 		return -1;
 	}
-#ifndef OPENSSL_NO_ECH
+#ifdef USE_ECH
 	if (strcmp(args[1], "ech-decrypt") == 0) {
         int loaded = 0;
 
@@ -1438,7 +1438,7 @@ static int tcp_parse_tcp_req(char **args, int section_type, struct proxy *curpx,
 		LIST_APPEND(&curpx->tcp_req.l5_rules, &rule->list);
 	}
 	else {
-#ifndef OPENSSL_NO_ECH
+#ifdef USE_ECH
 		if (curpx == defpx)
 			memprintf(err,
 			          "'%s' expects 'inspect-delay', 'connection', 'content' or 'ech-decrypt' in defaults section (got '%s')",

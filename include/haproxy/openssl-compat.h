@@ -32,8 +32,8 @@
 #if defined(USE_ENGINE) && !defined(OPENSSL_NO_ENGINE)
 #include <openssl/engine.h>
 #endif
-#ifndef OPENSSL_NO_ECH
-#include <openssl/ech.h>
+#ifdef USE_ECH
+# include <openssl/ech.h>
 #endif
 
 #ifdef SSL_MODE_ASYNC
