@@ -87,7 +87,6 @@
 #include <haproxy/istbuf.h>
 #include <haproxy/ssl_ocsp.h>
 
-
 /* ***** READ THIS before adding code here! *****
  *
  * Due to API incompatibilities between multiple OpenSSL versions and their
@@ -3342,6 +3341,24 @@ ssl_sock_initial_ctx(struct bind_conf *bind_conf)
 	if (global_ssl.security_level > -1)
 		SSL_CTX_set_security_level(ctx, global_ssl.security_level);
 
+#ifdef USE_ECH
+    if (!ctx) {
+        cfgerr += 1;
+    }
+    if (!cfgerr && bind_conf->ech_filedir) {
+        int loaded = 0;
+
+        if (SSL_CTX_ech_server_enable_dir(ctx, &loaded, bind_conf->ech_filedir,
+                                          SSL_ECH_USE_FOR_RETRY) != 1) {
+		    cfgerr += 1;
+		    ha_alert("Proxy '%s': failed to load ECH key s from %s for '%s' at [%s:%d].\n",
+			    bind_conf->frontend->id, bind_conf->ech_filedir, bind_conf->arg, bind_conf->file, bind_conf->line);
+        }
+		ha_notice("Proxy '%s': loaded %d ECH keys from %s for bind '%s' at [%s:%d]\n",
+			   bind_conf->frontend->id, loaded, bind_conf->ech_filedir, bind_conf->arg, bind_conf->file, bind_conf->line);
+    }
+#endif
+
 	if (conf_ssl_methods->flags && (conf_ssl_methods->min || conf_ssl_methods->max))
 		ha_warning("Proxy '%s': no-sslv3/no-tlsv1x are ignored for bind '%s' at [%s:%d]. "
 			   "Use only 'ssl-min-ver' and 'ssl-max-ver' to fix.\n",
@@ -4685,10 +4702,16 @@ int ssl_sock_prepare_bind_conf(struct bind_conf *bind_conf)
 				   px->id, bind_conf->arg, bind_conf->file, bind_conf->line);
 		}
 		else {
+#ifdef USE_ECH
+            if (!bind_conf->ech_filedir) {
+#endif
 			ha_alert("Proxy '%s': no SSL certificate specified for bind '%s' at [%s:%d] (use 'crt').\n",
 				 px->id, bind_conf->arg, bind_conf->file, bind_conf->line);
 			return -1;
 		}
+#ifdef USE_ECH
+        }
+#endif
 	}
 
 	if ((bind_conf->options & BC_O_GENERATE_CERTS)) {

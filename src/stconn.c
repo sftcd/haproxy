@@ -22,6 +22,10 @@
 #include <haproxy/sc_strm.h>
 #include <haproxy/stconn.h>
 #include <haproxy/xref.h>
+#ifdef USE_ECH
+#include <haproxy/log.h>
+#include <haproxy/ech.h>
+#endif
 
 DECLARE_POOL(pool_head_connstream, "stconn", sizeof(struct stconn));
 DECLARE_POOL(pool_head_sedesc, "sedesc", sizeof(struct sedesc));
@@ -207,6 +211,9 @@ static struct stconn *sc_new(struct sedesc *sedesc)
 	sc->dst = NULL;
 	sc->wait_event.tasklet = NULL;
 	sc->wait_event.events = 0;
+#ifdef USE_ECH
+    sc->ech_state = NULL;
+#endif
 
 	/* If there is no endpoint, allocate a new one now */
 	if (!sedesc) {
@@ -297,6 +304,12 @@ void sc_free(struct stconn *sc)
 		sedesc_free(sc->sedesc);
 	}
 	tasklet_free(sc->wait_event.tasklet);
+#ifdef USE_ECH
+    if (sc->ech_state != NULL) {
+        ech_state_free(sc->ech_state);
+        sc->ech_state=NULL;
+    }
+#endif
 	pool_free(pool_head_connstream, sc);
 }
 
@@ -1405,6 +1418,51 @@ int sc_conn_recv(struct stconn *sc)
 		 */
 		max = channel_recv_max(ic);
 		ret = conn->mux->rcv_buf(sc, &ic->buf, max, cur_flags);
+#ifdef USE_ECH
+        /*
+         * If we configured ECH, and maybe hit HRR, then
+         * attempt decryption.
+         */
+        if (sc->ech_state != NULL
+            && sc->ech_state->calls == 1) {
+            int dec_ok = 0;
+            unsigned char *data = NULL, *newdata = NULL;
+            size_t bleft = 0, newlen = 0;
+#undef ECHDOLOG
+#ifdef ECHDOLOG
+	        struct stream *s = __sc_strm(sc);
+	        struct proxy *frontend = strm_fe(s);
+
+            send_log(frontend, LOG_INFO, "Will check split-mode ECH decryption (2nd CH/HRR)");
+#endif
+
+            data = (unsigned char *)b_head(&ic->buf);
+            bleft = b_data(&ic->buf);
+            if ((data[0] == 0x16 || data[0] == 0x14)
+                && attempt_split_ech(sc->ech_state,
+                                  data, bleft,
+                                  &dec_ok,
+                                  &newdata, &newlen) == 1
+                && dec_ok == 1) {
+#ifdef ECHDOLOG
+                send_log(frontend, LOG_INFO, "Split-mode ECH decryption success (2nd CH/HRR)");
+#endif
+                /* do stuff */
+                sc->ech_state->calls++;
+                b_reset(&ic->buf);
+                b_putblk(&ic->buf, (char *)newdata, newlen);
+                OPENSSL_free(newdata);
+                /* we're done with this now */
+                ech_state_free(sc->ech_state);
+                sc->ech_state = NULL;
+            }
+#ifdef ECHDOLOG
+             else {
+                send_log(frontend, LOG_INFO, "Split-mode ECH decryption error or not needed (2nd CH/HRR)");
+            }
+#endif
+        }
+#endif
 
 		if (sc_ep_test(sc, SE_FL_WANT_ROOM)) {
 			/* SE_FL_WANT_ROOM must not be reported if the channel's

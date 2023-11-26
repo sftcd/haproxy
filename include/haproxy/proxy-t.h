@@ -44,6 +44,11 @@
 #include <haproxy/tools-t.h>
 #include <haproxy/uri_auth-t.h>
 #include <haproxy/http_ext-t.h>
+#ifdef USE_ECH
+/* this may be wrong, not sure */
+#include <haproxy/openssl-compat.h>
+#endif
+
 
 /* values for proxy->mode */
 enum pr_mode {
@@ -301,6 +306,11 @@ struct proxy {
 		struct list inspect_rules;      /* inspection rules */
 		struct list l4_rules;           /* layer4 rules */
 		struct list l5_rules;           /* layer5 rules */
+#ifdef USE_ECH
+        SSL_CTX *ech_ctx;               /* SSL_CTX for ECH decryption */
+        unsigned char *ech_hrrtok;      /* hrr token */
+        size_t  tech_oklen;             /* length of above */
+#endif
 	} tcp_req;
 	struct {                                /* TCP request processing */
 		unsigned int inspect_delay;     /* inspection delay */

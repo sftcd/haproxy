@@ -35,6 +35,7 @@
 #   USE_OPENSSL             : enable use of OpenSSL. Recommended, but see below.
 #   USE_OPENSSL_AWSLC       : enable use of AWS-LC
 #   USE_OPENSSL_WOLFSSL     : enable use of wolfSSL with the OpenSSL API
+#   USE_ECH                 : enable use of ECH with the OpenSSL API
 #   USE_QUIC                : enable use of QUIC with the quictls API (quictls, libressl, boringssl)
 #   USE_QUIC_OPENSSL_COMPAT : enable use of QUIC with the standard openssl API (limited features)
 #   USE_ENGINE              : enable use of OpenSSL Engine.
@@ -336,6 +337,7 @@ use_opts = USE_EPOLL USE_KQUEUE USE_NETFILTER USE_POLL                        \
            USE_TPROXY USE_LINUX_TPROXY USE_LINUX_CAP                          \
            USE_LINUX_SPLICE USE_LIBCRYPT USE_CRYPT_H USE_ENGINE               \
            USE_GETADDRINFO USE_OPENSSL USE_OPENSSL_WOLFSSL USE_OPENSSL_AWSLC  \
+		   USE_ECH                                                            \
            USE_SSL USE_LUA USE_ACCEPT4 USE_CLOSEFROM USE_ZLIB USE_SLZ         \
            USE_CPU_AFFINITY USE_TFO USE_NS USE_DL USE_RT USE_LIBATOMIC        \
            USE_MATH USE_DEVICEATLAS USE_51DEGREES                             \
@@ -627,6 +629,11 @@ ifneq ($(USE_OPENSSL:0=),)
   endif
   USE_SSL         := $(if $(USE_SSL:0=),$(USE_SSL:0=),implicit)
   OPTIONS_OBJS += src/ssl_sock.o src/ssl_ckch.o src/ssl_ocsp.o src/ssl_crtlist.o src/ssl_sample.o src/cfgparse-ssl.o src/ssl_gencert.o src/ssl_utils.o src/jwt.o src/ssl_clienthello.o
+endif
+
+# For our Encrypted Client Hello (ECH) experiment
+ifneq ($(USE_ECH),)
+	SSL_CFLAGS      := -DUSE_ECH
 endif
 
 ifneq ($(USE_ENGINE:0=),)
@@ -982,7 +989,8 @@ OBJS += src/mux_h2.o src/mux_h1.o src/mux_fcgi.o src/stream.o		\
         src/hpack-tbl.o src/ebsttree.o src/ebistree.o src/auth.o	\
         src/hpack-huff.o src/freq_ctr.o src/dict.o src/wdt.o		\
         src/pipe.o src/init.o src/http_acl.o src/hpack-enc.o		\
-        src/ebtree.o src/dgram.o src/hash.o src/version.o
+        src/ebtree.o src/dgram.o src/hash.o src/version.o \
+		src/ech.o
 
 ifneq ($(TRACE),)
   OBJS += src/calltrace.o

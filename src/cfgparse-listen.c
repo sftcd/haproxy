@@ -63,6 +63,9 @@ static const char *common_options[] = {
 	"ssl-hello-chk", "smtpchk", "pgsql-check", "redis-check",
 	"mysql-check", "ldap-check", "spop-check", "tcp-check",
 	"external-check", "forwardfor", "original-to", "forwarded",
+#ifdef USE_ECH
+    "ssl-hello-ech",
+#endif
 	NULL /* must be last */
 };
 

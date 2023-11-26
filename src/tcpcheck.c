@@ -4119,7 +4119,6 @@ int proxy_parse_redis_check_opt(char **args, int cur_arg, struct proxy *curpx, c
 	goto out;
 }
 
-
 /* Parses the "option ssl-hello-chk" proxy keyword */
 int proxy_parse_ssl_hello_chk_opt(char **args, int cur_arg, struct proxy *curpx, const struct proxy *defpx,
 				  const char *file, int line)

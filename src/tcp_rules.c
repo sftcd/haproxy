@@ -1259,6 +1259,39 @@ static int tcp_parse_tcp_req(char **args, int section_type, struct proxy *curpx,
 		memprintf(err, "parsing [%s:%d] : out of memory", file, line);
 		return -1;
 	}
+#ifdef USE_ECH
+	if (strcmp(args[1], "ech-decrypt") == 0) {
+        int loaded = 0;
+
+        if (!*args[2]) {
+			memprintf(err,
+			          "'%s %s' expects a directory name, in %s '%s'",
+			          args[0], args[1], proxy_type_str(curpx), curpx->id);
+            return -1;
+        }
+        /* Create or add-to the SSL_CTX with those ECH key pairs */
+        if (!curpx->tcp_req.ech_ctx) {
+            const SSL_METHOD *meth = TLS_server_method();
+            curpx->tcp_req.ech_ctx=SSL_CTX_new(meth);
+            if (!curpx->tcp_req.ech_ctx) {
+			    memprintf(err, "%s %s %s failed creating SSL_CTX %s '%s'",
+			          args[0], args[1], args[2], proxy_type_str(curpx), curpx->id);
+                return -1;
+            }
+        }
+        /* Add ECH keys to SSL_CTX */
+        if (SSL_CTX_ech_server_enable_dir(curpx->tcp_req.ech_ctx, &loaded,
+                                          args[2], SSL_ECH_USE_FOR_RETRY) != 1) {
+            /* Warn that we skipped it */
+			memprintf(err, "loading %s %s %s failed - skipping that one %s '%s'",
+			          args[0], args[1], args[2], proxy_type_str(curpx), curpx->id);
+        } else
+            ha_notice("%s %s worked - loaded %d keys from %s for %s '%s'\n",
+                  args[0], args[1], loaded, args[2], proxy_type_str(curpx), curpx->id);
+        return 0;
+    }
+#endif
+
 	LIST_INIT(&rule->list);
 	arg = 1;
 	where = 0;
@@ -1395,6 +1428,16 @@ static int tcp_parse_tcp_req(char **args, int section_type, struct proxy *curpx,
 		LIST_APPEND(&curpx->tcp_req.l5_rules, &rule->list);
 	}
 	else {
+#ifdef USE_ECH
+		if (curpx == defpx)
+			memprintf(err,
+			          "'%s' expects 'inspect-delay', 'connection', 'content' or 'ech-decrypt' in defaults section (got '%s')",
+			          args[0], args[1]);
+		else
+			memprintf(err,
+			          "'%s' expects 'inspect-delay', 'connection', 'content' or 'ech-decrypt' in %s '%s' (got '%s')",
+			          args[0], proxy_type_str(curpx), curpx->id, args[1]);
+#else
 		if (curpx == defpx)
 			memprintf(err,
 			          "'%s' expects 'inspect-delay', 'connection', or 'content' in defaults section (got '%s')",
@@ -1403,6 +1446,7 @@ static int tcp_parse_tcp_req(char **args, int section_type, struct proxy *curpx,
 			memprintf(err,
 			          "'%s' expects 'inspect-delay', 'connection', or 'content' in %s '%s' (got '%s')",
 			          args[0], proxy_type_str(curpx), curpx->id, args[1]);
+#endif
 		goto error;
 	}
 

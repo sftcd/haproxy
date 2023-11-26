@@ -26,6 +26,11 @@
 #include <haproxy/stconn.h>
 #include <haproxy/tools.h>
 
+#ifdef USE_ECH
+#include <haproxy/log.h>
+#include <haproxy/ech.h>
+#endif
+
 
 /************************************************************************/
 /*       All supported sample fetch functions must be declared here     */
@@ -522,6 +527,119 @@ smp_fetch_req_ssl_ver(const struct arg *args, struct sample *smp, const char *kw
 	return 0;
 }
 
+#ifdef USE_ECH
+
+static int
+payload_attempt_split_ech(const struct arg *args,
+                          struct sample *smp,
+                          const char *kw,
+                          void *private)
+{
+	int bleft;
+	struct channel *chn;
+	unsigned char *data;
+    int decrypted_ok=0;
+    unsigned char *newdata = NULL;
+    size_t newlen=1024;
+    int srv=0;
+    ech_state_t *ech_state = NULL;
+    struct stconn *sc = NULL;
+#undef ECHDOLOG
+#ifdef ECHDOLOG
+    /* next two just for logging */
+    struct stream *s = NULL;
+    struct proxy *frontend = NULL;
+#endif
+
+    /*
+     * Do some initial checks to be sure we have an entire CH
+     * before attempting ECH decryption 
+     */
+	if (!smp->strm)
+		goto not_ssl_hello;
+	/* meaningless for HTX buffers */
+	if (IS_HTX_STRM(smp->strm))
+		goto not_ssl_hello;
+	chn = ((smp->opt & SMP_OPT_DIR) == SMP_OPT_DIR_RES)
+           ? &smp->strm->res : &smp->strm->req;
+	bleft = ci_data(chn);
+	data = (unsigned char *)ci_head(chn);
+
+    sc = chn_prod(chn);
+#ifdef ECHDOLOG
+    s = __sc_strm(sc);
+    frontend = strm_fe(s);
+#endif
+
+    if (smp->ctx.a[0] != NULL) {
+        ech_state = (ech_state_t*) smp->ctx.a[0];
+        if (ech_state->calls > 0
+            && ech_state->inner_sni != NULL) {
+            /* we did ECH decrypt already so no need again */
+            ech_state->calls++;
+            /* switch on inner SNI */
+            smp->data.type = SMP_T_STR;
+            smp->data.u.str.area = ech_state->inner_sni;
+            smp->data.u.str.data = strlen(ech_state->inner_sni);
+            smp->flags = SMP_F_VOLATILE | SMP_F_CONST;
+            return 1;
+        }
+    }
+
+    ech_state = (ech_state_t*) OPENSSL_zalloc(sizeof(ech_state_t));
+    if (ech_state == NULL)
+        goto not_ssl_hello;
+    ech_state->ctx = smp->px->tcp_req.ech_ctx;
+    smp->ctx.a[0] = (void *)ech_state;
+#ifdef ECHDOLOG
+    send_log(frontend, LOG_INFO, "Will attempt split-mode ECH decryption.");
+#endif
+
+    srv = attempt_split_ech(ech_state,
+                            data, bleft,
+                            &decrypted_ok,
+                            &newdata, &newlen);
+    if (srv == 0) {
+#ifdef ECHDOLOG
+        send_log(frontend, LOG_INFO, "Split-mode ECH decryption call failed");
+#endif
+        goto not_ssl_hello;
+    }
+    if (decrypted_ok) {
+        ech_state->calls++;
+        /* switch on inner SNI */
+        smp->data.type = SMP_T_STR;
+        smp->data.u.str.area = ech_state->inner_sni;
+        smp->data.u.str.data = (ech_state->inner_sni ?
+                                    strlen(ech_state->inner_sni)
+                                    : 0);
+        smp->flags = SMP_F_CONST;
+#ifdef ECHDOLOG
+        send_log(frontend, LOG_INFO, "Split-mode ECH decryption succeeded.");
+#endif
+        /* Move the inner CH onto the channel */
+        channel_erase(chn);
+        ci_putblk(chn,(char*)newdata,newlen);
+        /* store ECH state in case of HRR */
+        sc->ech_state = ech_state;
+        OPENSSL_free(newdata);
+        return 1;
+    }
+#ifdef ECHDOLOG
+     else {
+        send_log(frontend, LOG_INFO, "Split-mode ECH decryption failed.");
+    }
+#endif
+
+ too_short:
+	smp->flags = SMP_F_MAY_CHANGE;
+
+ not_ssl_hello:
+
+	return 0;
+}
+#endif
+
 /* Try to extract the Server Name Indication that may be presented in a TLS
  * client hello handshake message. The format of the message is the following
  * (cf RFC5246 + RFC6066) :
@@ -564,6 +682,30 @@ smp_fetch_ssl_hello_sni(const struct arg *args, struct sample *smp, const char *
 
 	if (!smp->strm)
 		goto not_ssl_hello;
+
+#ifdef USE_ECH
+    /*
+     * If we configured ECH, then attempt decryption.
+     * Even when ECH decryption worked, this may be called
+     * twice (or more), e.g. if we have two backends, one for 
+     * the public_name and one for the inner SNI.
+     * Even if called multiple times, things should be ok
+     * though, as the additional calls won't work given the
+     * inner CH will have replaced the outer CH after the
+     * first call, but no harm should ensue. (The overhead
+     * should also be ok, as we won't do crypto after the
+     * 1st ECH decryption since the inner CH will flag
+     * that it is an inner CH.)
+     * side note: those multiple calls confused me a lot;-)
+     * TODO: consider a malformed inner CH that contains
+     * another layer of ECH decryption or doesn't have the
+     * is-inner flag in the CH extension.
+     */
+    if (smp->px && smp->px->tcp_req.ech_ctx && smp->ctx.a[0] == NULL
+        && payload_attempt_split_ech(args, smp, kw, private) == 1) {
+            return 1;
+    }
+#endif
 
 	/* meaningless for HTX buffers */
 	if (IS_HTX_STRM(smp->strm))
@@ -676,7 +818,6 @@ smp_fetch_ssl_hello_sni(const struct arg *args, struct sample *smp, const char *
 				return 1;
 			}
 		}
-
 		hs_len -= 4 + ext_len;
 		data   += 4 + ext_len;
 	}
