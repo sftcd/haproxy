@@ -25,7 +25,6 @@
 
 #  include <haproxy/ech-t.h>
 #  include <openssl/ech.h>
-
  
 int attempt_split_ech(ech_state_t *ech_state,
                       unsigned char *data, size_t bleft,

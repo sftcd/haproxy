@@ -1256,7 +1256,6 @@ static int bind_parse_alpn(char **args, int cur_arg, struct proxy *px, struct bi
 }
 
 #ifdef USE_ECH
-
 static int ssl_bind_parse_ech(char **args, int cur_arg, struct proxy *px, struct ssl_bind_conf *conf, int from_cli, char **err)
 {
     if (conf->ech_filedir) free(conf->ech_filedir);
