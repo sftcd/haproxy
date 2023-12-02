@@ -1428,7 +1428,6 @@ int sc_conn_recv(struct stconn *sc)
             int dec_ok = 0;
             unsigned char *data = NULL, *newdata = NULL;
             size_t bleft = 0, newlen = 0;
-#undef ECHDOLOG
 #ifdef ECHDOLOG
 	        struct stream *s = __sc_strm(sc);
 	        struct proxy *frontend = strm_fe(s);

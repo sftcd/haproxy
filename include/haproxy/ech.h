@@ -23,6 +23,9 @@
 # define _HAPROXY_ECH_H
 # ifdef USE_ECH
 
+/* define this for additional logging of split-mode ECH */
+#define ECHDOLOG
+
 #  include <haproxy/ech-t.h>
 #  include <openssl/ech.h>
  
