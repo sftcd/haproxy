@@ -1,0 +1,2 @@
+version=3
+opts="uversionmangle=s/-(dev\d+)/~$1/" https://www.haproxy.org/download/2.9/src/ haproxy-(2\.9(?:\.|-dev)\d+)\.(?:tgz|tbz2|tar\.(?:gz|bz2|xz))

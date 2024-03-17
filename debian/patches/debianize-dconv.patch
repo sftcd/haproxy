@@ -1,0 +1,170 @@
+From: Apollon Oikonomopoulos <apoikos@debian.org>
+Date: Wed, 29 Apr 2015 13:51:49 +0300
+Subject: [PATCH] dconv: debianize
+
+ - Use Debian bootstrap and jquery packages
+ - Add Debian-related resources to the template
+ - Use the package's version instead of HAProxy's git version
+ - Strip the conversion date from the output to ensure reproducible
+   build.
+ - 2020-01-17: make get_haproxy_debian_version() return a string, for py3
+   compatibility
+
+diff --git a/debian/dconv/haproxy-dconv.py b/debian/dconv/haproxy-dconv.py
+index fe2b96dce325..702eefac6a3b 100755
+--- a/debian/dconv/haproxy-dconv.py
++++ b/debian/dconv/haproxy-dconv.py
+@@ -44,12 +44,11 @@ VERSION = ""
+ HAPROXY_GIT_VERSION = False
+ 
+ def main():
+-    global VERSION, HAPROXY_GIT_VERSION
++    global HAPROXY_GIT_VERSION
+ 
+     usage="Usage: %prog --infile <infile> --outfile <outfile>"
+ 
+     optparser = OptionParser(description='Generate HTML Document from HAProxy configuation.txt',
+-                          version=VERSION,
+                           usage=usage)
+     optparser.add_option('--infile', '-i', help='Input file mostly the configuration.txt')
+     optparser.add_option('--outfile','-o', help='Output file')
+@@ -65,11 +64,7 @@ def main():
+ 
+     os.chdir(os.path.dirname(__file__))
+ 
+-    VERSION = get_git_version()
+-    if not VERSION:
+-        sys.exit(1)
+-
+-    HAPROXY_GIT_VERSION = get_haproxy_git_version(os.path.dirname(option.infile))
++    HAPROXY_GIT_VERSION = get_haproxy_debian_version(os.path.dirname(option.infile))
+ 
+     convert(option.infile, option.outfile, option.base)
+ 
+@@ -114,6 +109,15 @@ def get_haproxy_git_version(path):
+     version = re.sub(r'-g.*', '', version)
+     return version
+ 
++def get_haproxy_debian_version(path):
++    try:
++        version = subprocess.check_output(["dpkg-parsechangelog", "-Sversion"],
++                                          cwd=os.path.join(path, ".."))
++    except subprocess.CalledProcessError:
++        return False
++
++    return version.decode("utf-8").strip()
++
+ def getTitleDetails(string):
+     array = string.split(".")
+ 
+@@ -506,7 +510,6 @@ def convert(infile, outfile, base=''):
+             keywords = keywords,
+             keywordsCount = keywordsCount,
+             keyword_conflicts = keyword_conflicts,
+-            version = VERSION,
+             date = datetime.datetime.now().strftime("%Y/%m/%d"),
+         )
+     except TopLevelLookupException:
+@@ -524,7 +527,6 @@ def convert(infile, outfile, base=''):
+             keywords = keywords,
+             keywordsCount = keywordsCount,
+             keyword_conflicts = keyword_conflicts,
+-            version = VERSION,
+             date = datetime.datetime.now().strftime("%Y/%m/%d"),
+             footer = footer
+     )
+diff --git a/debian/dconv/templates/template.html b/debian/dconv/templates/template.html
+index c72b3558c2dd..9aefa16dd82d 100644
+--- a/debian/dconv/templates/template.html
++++ b/debian/dconv/templates/template.html
+@@ -3,8 +3,8 @@
+ 	<head>
+ 		<meta charset="utf-8" />
+ 		<title>${headers['title']} ${headers['version']} - ${headers['subtitle']}</title>
+-		<link href="//cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.1.1/css/bootstrap.min.css" rel="stylesheet" />
+-		<link href="${base}css/page.css?${version}" rel="stylesheet" />
++		<link href="${base}css/bootstrap.min.css" rel="stylesheet" />
++		<link href="${base}css/page.css" rel="stylesheet" />
+ 	</head>
+ 	<body>
+ 		<nav class="navbar navbar-default navbar-fixed-top" role="navigation">
+@@ -15,7 +15,7 @@
+ 					<span class="icon-bar"></span>
+ 					<span class="icon-bar"></span>
+ 				</button>
+-				<a class="navbar-brand" href="${base}index.html">${headers['title']} <small>${headers['subtitle']}</small></a>
++				<a class="navbar-brand" href="${base}configuration.html">${headers['title']}</a>
+ 			</div>
+ 			<!-- /.navbar-header -->
+ 
+@@ -24,31 +24,16 @@
+ 				<ul class="nav navbar-nav">
+ 					<li><a href="http://www.haproxy.org/">HAProxy home page</a></li>
+ 					<li class="dropdown">
+-						<a href="#" class="dropdown-toggle" data-toggle="dropdown">Versions <b class="caret"></b></a>
++						<a href="#" class="dropdown-toggle" data-toggle="dropdown">Debian resources <b class="caret"></b></a>
+ 						<ul class="dropdown-menu">
+ 							## TODO : provide a structure to dynamically generate per version links
+-							<li class="dropdown-header">HAProxy 1.4</li>
+-							<li><a href="${base}configuration-1.4.html">Configuration Manual <small>(stable)</small></a></li>
+-							<li><a href="${base}snapshot/configuration-1.4.html">Configuration Manual <small>(snapshot)</small></a></li>
+-							<li><a href="http://git.1wt.eu/git/haproxy-1.4.git/">GIT Repository</a></li>
+-							<li><a href="http://www.haproxy.org/git/?p=haproxy-1.4.git">Browse repository</a></li>
+-							<li><a href="http://www.haproxy.org/download/1.4/">Browse directory</a></li>
+-							<li class="divider"></li>
+-							<li class="dropdown-header">HAProxy 1.5</li>
+-							<li><a href="${base}configuration-1.5.html">Configuration Manual <small>(stable)</small></a></li>
+-							<li><a href="${base}snapshot/configuration-1.5.html">Configuration Manual <small>(snapshot)</small></a></li>
+-							<li><a href="http://git.1wt.eu/git/haproxy-1.5.git/">GIT Repository</a></li>
+-							<li><a href="http://www.haproxy.org/git/?p=haproxy-1.5.git">Browse repository</a></li>
+-							<li><a href="http://www.haproxy.org/download/1.5/">Browse directory</a></li>
+-                            <li class="divider"></li>
+-                            <li class="dropdown-header">HAProxy 1.6</li>
+-                            <li><a href="${base}configuration-1.6.html">Configuration Manual <small>(stable)</small></a></li>
+-                            <li><a href="${base}snapshot/configuration-1.6.html">Configuration Manual <small>(snapshot)</small></a></li>
+-                            <li><a href="${base}intro-1.6.html">Starter Guide <small>(stable)</small></a></li>
+-                            <li><a href="${base}snapshot/intro-1.6.html">Starter Guide <small>(snapshot)</small></a></li>
+-                            <li><a href="http://git.1wt.eu/git/haproxy.git/">GIT Repository</a></li>
+-                            <li><a href="http://www.haproxy.org/git/?p=haproxy.git">Browse repository</a></li>
+-                            <li><a href="http://www.haproxy.org/download/1.6/">Browse directory</a></li>
++						    <li><a href="https://bugs.debian.org/src:haproxy">Bug Tracking System</a></li>
++						    <li><a href="https://packages.debian.org/haproxy">Package page</a></li>
++						    <li><a href="http://tracker.debian.org/pkg/haproxy">Package Tracking System</a></li>
++						    <li class="divider"></li>
++                                                    <li><a href="${base}intro.html">Starter Guide</a></li>
++                                                    <li><a href="${base}configuration.html">Configuration Manual</a></li>
++						    <li><a href="http://anonscm.debian.org/gitweb/?p=pkg-haproxy/haproxy.git">Package Git Repository</a></li>
+ 						</ul>
+ 					</li>
+ 				</ul>
+@@ -72,7 +57,7 @@
+ 					The feature is automatically disabled when the search field is focused.
+ 				</p>
+ 				<p class="text-right">
+-					<small>Converted with <a href="https://github.com/cbonte/haproxy-dconv">haproxy-dconv</a> v<b>${version}</b> on <b>${date}</b></small>
++					<small>Converted with <a href="https://github.com/cbonte/haproxy-dconv">haproxy-dconv</a></small>
+ 				</p>
+ 			</div>
+ 			<!-- /.sidebar -->
+@@ -83,7 +68,7 @@
+ 						<div class="text-center">
+ 							<h1>${headers['title']}</h1>
+ 							<h2>${headers['subtitle']}</h2>
+-							<p><strong>${headers['version']}</strong></p>
++							<p><strong>${headers['version']} (Debian)</strong></p>
+ 							<p>
+ 								<a href="http://www.haproxy.org/" title="HAProxy Home Page"><img src="${base}img/logo-med.png" /></a><br>
+ 								${headers['author']}<br>
+@@ -114,9 +99,9 @@
+ 		</div>
+ 		<!-- /#wrapper -->
+ 
+-		<script src="//cdnjs.cloudflare.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+-		<script src="//cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.1.1/js/bootstrap.min.js"></script>
+-		<script src="//cdnjs.cloudflare.com/ajax/libs/typeahead.js/0.11.1/typeahead.bundle.min.js"></script>
++		<script src="${base}js/jquery.min.js"></script>
++		<script src="${base}js/bootstrap.min.js"></script>
++		<script src="${base}js/typeahead.bundle.js"></script>
+ 		<script>
+ 			/* Keyword search */
+ 			var searchFocus = false

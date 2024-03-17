@@ -1,0 +1,60 @@
+Source: haproxy
+Section: net
+Priority: optional
+Maintainer: Debian HAProxy Maintainers <team+haproxy@tracker.debian.org>
+Uploaders: Apollon Oikonomopoulos <apoikos@debian.org>,
+           Prach Pongpanich <prach@debian.org>,
+           Vincent Bernat <bernat@debian.org>
+Standards-Version: 4.4.1
+Build-Depends: debhelper-compat (= 12),
+               libpcre2-dev,
+               libssl-dev,
+               liblua5.3-dev,
+               libsystemd-dev [linux-any],
+               libjemalloc-dev,
+               python3-sphinx,
+               libopentracing-c-wrapper-dev,
+               pkg-config,
+               systemd-dev [linux-any]
+Build-Depends-Indep: python3, python3-mako
+Homepage: http://www.haproxy.org/
+Vcs-Git: https://salsa.debian.org/haproxy-team/haproxy.git
+Vcs-Browser: https://salsa.debian.org/haproxy-team/haproxy
+
+Package: haproxy
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, adduser, lsb-base (>= 3.0-6)
+Pre-Depends: dpkg (>= 1.17.14), ${misc:Pre-Depends}
+Suggests: vim-haproxy, haproxy-doc
+Description: fast and reliable load balancing reverse proxy
+ HAProxy is a TCP/HTTP reverse proxy which is particularly suited for high
+ availability environments. It features connection persistence through HTTP
+ cookies, load balancing, header addition, modification, deletion both ways. It
+ has request blocking capabilities and provides interface to display server
+ status.
+
+Package: haproxy-doc
+Section: doc
+Architecture: all
+Depends: ${misc:Depends}, libjs-bootstrap (<< 4), libjs-jquery,
+ ${sphinxdoc:Depends}
+Pre-Depends: dpkg (>= 1.17.14)
+Description: fast and reliable load balancing reverse proxy (HTML documentation)
+ HAProxy is a TCP/HTTP reverse proxy which is particularly suited for high
+ availability environments. It features connection persistence through HTTP
+ cookies, load balancing, header addition, modification, deletion both ways. It
+ has request blocking capabilities and provides interface to display server
+ status.
+ .
+ This package contains the HTML documentation for haproxy.
+
+Package: vim-haproxy
+Architecture: all
+Depends: ${misc:Depends}
+Recommends: vim-addon-manager
+Description: syntax highlighting for HAProxy configuration files
+ The vim-haproxy package provides filetype detection and syntax highlighting
+ for HAProxy configuration files.
+ .
+ As per the Debian vim policy, installed addons are not activated
+ automatically, but the "vim-addon-manager" tool can be used for this purpose.
