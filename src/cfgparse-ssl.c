@@ -2205,7 +2205,6 @@ struct ssl_crtlist_kw ssl_crtlist_kws[] = {
 	{ "ssl-min-ver",           ssl_bind_parse_tls_method_minmax,1 }, /* minimum version */
 	{ "ssl-max-ver",           ssl_bind_parse_tls_method_minmax,1 }, /* maximum version */
 	{ "verify",                ssl_bind_parse_verify,           1 }, /* set SSL verify method */
-	{ "ocsp-update",           ssl_bind_parse_ocsp_update,      1 }, /* ocsp update mode (on or off) */
 #ifdef USE_ECH
 	{ "ech",                   ssl_bind_parse_ech,              1 }, /* set ECH PEM file */
 #endif
