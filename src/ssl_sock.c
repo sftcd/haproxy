@@ -237,9 +237,12 @@ struct show_keys_ctx {
 struct show_ech_ctx {
     struct proxy * pp;
     int fd;
+    SSL_CTX *specific_ctx;
+    char *specific_name;
     enum {
         SHOW_ECH_PROXY = 0,
         SHOW_ECH_FD,
+        SHOW_ECH_SPECIFIC,
     } state;                       /* phase of the current dump */
 };
 #endif
@@ -6703,14 +6706,79 @@ static int cli_parse_set_tlskeys(char **args, char *payload, struct appctx *appc
 
 
 #ifdef USE_ECH
+
+/* find a named SSL_CTX */
+static int cli_find_ech_specific_ctx(char *name, SSL_CTX **sctx)
+{
+    struct proxy *pr = NULL;
+    struct fdtab *fdt = NULL;
+    struct listener *li = NULL;
+    int found = 0, fd = 0;
+    SSL_CTX *res = NULL;
+
+    if (!name || !sctx)
+        return 1;
+    /* check in proxies */
+    pr = proxies_list;
+    while (pr && !found) {
+        if (!pr->srv || !pr->srv->id) {
+            pr = pr->next;
+            continue;
+        }
+        if (!strcmp(pr->srv->id, name) && pr->tcp_req.ech_ctx) {
+            found = 1;
+            res = pr->tcp_req.ech_ctx;
+        } else if (!strcmp(pr->srv->id, name) && pr->srv->ssl_ctx.ctx) {
+            found = 1;
+            res = pr->srv->ssl_ctx.ctx;
+        }
+        pr = pr->next;
+    }
+    /* check fd's */
+    while (!found && fd < global.maxsock) {
+        fdt = &fdtab[fd++];
+        if (!fdt->owner)
+            continue;
+        li = objt_listener(fdt->owner);
+        if (li && li->bind_conf && li->bind_conf->initial_ctx
+            && li->bind_conf->frontend
+            && !strcmp(li->bind_conf->frontend->id, name)) {
+            found = 1;
+            res = li->bind_conf->initial_ctx;
+        }
+    }
+
+    if (found) {
+        *sctx = res;
+        return 0;
+    }
+    return 1;
+}
+
 /* parsing function for 'show ssl ech [echfile]' */
 static int cli_parse_show_ech(char **args, char *payload, struct appctx *appctx, void *private)
 {
     struct show_ech_ctx *ctx = applet_reserve_svcctx(appctx, sizeof(*ctx));
 
-    ctx->pp = proxies_list;
-    ctx->state = SHOW_ECH_PROXY;
-    ctx->fd = 0;
+	/* no parameter, shows only file list */
+	if (*args[3]) {
+        SSL_CTX *sctx = NULL;
+
+        if (cli_find_ech_specific_ctx(args[3], &sctx))
+			return cli_err(appctx, "'show ssl ech' unable to locate referenced SSL_CTX\n");
+        ctx->specific_name = args[3];
+        ctx->specific_ctx = sctx;
+        ctx->state = SHOW_ECH_SPECIFIC;
+        ctx->fd = 0;
+        ctx->pp = NULL;
+    } else {
+        ctx->specific_name = NULL;
+        ctx->specific_ctx = NULL;
+        ctx->pp = proxies_list;
+        ctx->fd = 0;
+        ctx->state = SHOW_ECH_PROXY;
+    }
+
     return 0;
 }
 
@@ -6836,6 +6904,15 @@ static int cli_io_handler_ech_details(struct appctx *appctx)
      */
     thread_isolate();
 
+    if (ctx->state == SHOW_ECH_SPECIFIC) {
+        chunk_appendf(trash, "***\nECH for %s ", ctx->specific_name);
+        cli_print_ech_info(ctx->specific_ctx, trash);
+        if (applet_putchk(appctx, trash) == -1)
+            return 0;
+        thread_release();
+        return 1;
+    }
+
     if (ctx->state == SHOW_ECH_PROXY) {
         if (!ctx->pp) { /* move to next state */
             ctx->state = SHOW_ECH_FD;
@@ -6847,7 +6924,7 @@ static int cli_io_handler_ech_details(struct appctx *appctx)
 
             ctx->pp = ctx->pp->next;
             /* try print split-mode ECH info */
-            if (pr->tcp_req.ech_ctx) {
+            if (pr->srv && pr->tcp_req.ech_ctx) {
                 chunk_appendf(trash, "***\nECH split-mode: %s ", pr->srv->id);
                 cli_print_ech_info(pr->tcp_req.ech_ctx, trash);
                 something_to_say = 1;
