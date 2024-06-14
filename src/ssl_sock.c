@@ -6706,8 +6706,77 @@ static int cli_parse_set_tlskeys(char **args, char *payload, struct appctx *appc
 
 
 #ifdef USE_ECH
+/*
+ * ECH key management
+ *
+ * "show" syntax: "show ssl ech [name]" where name is a frontend
+ * or backend.
+ *
+ * To use this, start haproxy, then (with out test configs)
+ *
+ *      $ socat /tmp/haproxy.sock stdio
+ *      prompt
+ *      > show ssl ech
+ *      ...
+ *      >
+ *
+ * After running socat, you have to type "prompt" to get the
+ * command line.
+ *
+ * Right now the output (for haproxymin.conf) looks like:
+ *
+ *     $ socat /tmp/haproxy.sock stdio
+ *     prompt
+ *     > show ssl ech
+ *     ***
+ *     backend: s2 no ECH config
+ *     ***
+ *     ECH split-mode: eg ECH details (3 configs total)
+ *     index: 0: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
+ *     index: 1: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *             [fe0d,64,example.com,0020,[0001,0001],cc12c8fb828c202d11b5adad67e15d0cccce1aaa493e1df34a770e4a5cdcd103,00,00]
+ *     index: 2: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
+ *     ***
+ *     frontend: ECH-front ECH details (3 configs total)
+ *     index: 0: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
+ *     index: 1: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *             [fe0d,64,example.com,0020,[0001,0001],cc12c8fb828c202d11b5adad67e15d0cccce1aaa493e1df34a770e4a5cdcd103,00,00]
+ *     index: 2: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
+ *     ***
+ *     frontend: Two-TLS ECH details (3 configs total)
+ *     index: 0: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
+ *     index: 1: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *             [fe0d,64,example.com,0020,[0001,0001],cc12c8fb828c202d11b5adad67e15d0cccce1aaa493e1df34a770e4a5cdcd103,00,00]
+ *     index: 2: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
+ *
+ * CRTL-d will exit from the command line.
+ *
+ * You can also do it without the prompt:
+ *
+ *     $ echo "show ssl ech" | socat /tmp/haproxy.sock stdio
+ *     ...
+ *
+ * We find the SSL_CTX pointers differently for frontend and
+ * backend (ECH split-mode), as follows:
+ *
+ * backend: proxies_list[*].tcp_req.ech_ctx named via proxies_list[*].id
+ * frontend: objt_listener(fdtab[*]).bind_conf->initial_ctx, named via
+ * objt_listener(fdtab[*]).bind_conf->frontend->id
+ *
+ * note that not all entries will have ECH configs, nor SSL_CTX values
+ *
+ * If we ever add client-side ECH between haproxy and backends then we'd
+ * also be interested in proxies_list[*].srv->ssl_ctx.ctx but for now
+ * we'll not include those.
+ */
 
-/* find a named SSL_CTX */
+/* find a named SSL_CTX, returns 1 if found */
 static int cli_find_ech_specific_ctx(char *name, SSL_CTX **sctx)
 {
     struct proxy *pr = NULL;
@@ -6718,23 +6787,16 @@ static int cli_find_ech_specific_ctx(char *name, SSL_CTX **sctx)
 
     if (!name || !sctx)
         return 1;
-    /* check in proxies */
+    /* check in proxies for backend split-mode cases */
     pr = proxies_list;
     while (pr && !found) {
-        if (!pr->srv || !pr->srv->id) {
-            pr = pr->next;
-            continue;
-        }
-        if (!strcmp(pr->srv->id, name) && pr->tcp_req.ech_ctx) {
+        if (!strcmp(pr->id, name) && pr->tcp_req.ech_ctx) {
             found = 1;
             res = pr->tcp_req.ech_ctx;
-        } else if (!strcmp(pr->srv->id, name) && pr->srv->ssl_ctx.ctx) {
-            found = 1;
-            res = pr->srv->ssl_ctx.ctx;
         }
         pr = pr->next;
     }
-    /* check fd's */
+    /* check fd's for frontend cases */
     while (!found && fd < global.maxsock) {
         fdt = &fdtab[fd++];
         if (!fdt->owner)
@@ -6747,12 +6809,9 @@ static int cli_find_ech_specific_ctx(char *name, SSL_CTX **sctx)
             res = li->bind_conf->initial_ctx;
         }
     }
-
-    if (found) {
+    if (found)
         *sctx = res;
-        return 0;
-    }
-    return 1;
+    return found;
 }
 
 /* parsing function for 'show ssl ech [echfile]' */
@@ -6764,8 +6823,8 @@ static int cli_parse_show_ech(char **args, char *payload, struct appctx *appctx,
 	if (*args[3]) {
         SSL_CTX *sctx = NULL;
 
-        if (cli_find_ech_specific_ctx(args[3], &sctx))
-			return cli_err(appctx, "'show ssl ech' unable to locate referenced SSL_CTX\n");
+        if (cli_find_ech_specific_ctx(args[3], &sctx) != 1)
+			return cli_err(appctx, "'show ssl ech' unable to locate referenced name\n");
         ctx->specific_name = args[3];
         ctx->specific_ctx = sctx;
         ctx->state = SHOW_ECH_SPECIFIC;
@@ -6819,7 +6878,7 @@ static void cli_print_ech_info(SSL_CTX *ctx, struct buffer *trash)
         }
         returned = BIO_read(out, tmp->area, tmp->size-1);
         tmp->area[returned] = '\0';
-        chunk_appendf(trash, "%s\n", tmp->area);
+        chunk_appendf(trash, "\n%s", tmp->area);
         free_trash_chunk(tmp);
     }
 
@@ -6838,58 +6897,8 @@ end:
  * then we should break off processing to allow other threads to
  * do stuff (I think). That's why all the "goto end" stuff and
  * why the code is kind of re-entrant.
- *
- * To use this, start haproxy, then (with out test configs)
- *
- *      $ socat /tmp/haproxy.sock stdio
- *      prompt
- *      > show ssl ech
- *      ...
- *      >
- *
- * After running socat, you have to type "prompt" to get the
- * command line.
- *
- * Right now the output (for haproxymin.conf) looks like:
- *
- *     $ socat /tmp/haproxy.sock stdio
- *     prompt
- *     > show ssl ech
- *     ***
- *     backend: s2 no ECH config
- *     ***
- *     ECH split-mode: eg ECH details (3 configs total)
- *     index: 0: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
- *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
- *     index: 1: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
- *             [fe0d,64,example.com,0020,[0001,0001],cc12c8fb828c202d11b5adad67e15d0cccce1aaa493e1df34a770e4a5cdcd103,00,00]
- *     index: 2: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
- *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
- *     ***
- *     frontend: ECH-front ECH details (3 configs total)
- *     index: 0: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
- *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
- *     index: 1: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
- *             [fe0d,64,example.com,0020,[0001,0001],cc12c8fb828c202d11b5adad67e15d0cccce1aaa493e1df34a770e4a5cdcd103,00,00]
- *     index: 2: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
- *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
- *     ***
- *     frontend: Two-TLS ECH details (3 configs total)
- *     index: 0: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
- *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
- *     index: 1: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
- *             [fe0d,64,example.com,0020,[0001,0001],cc12c8fb828c202d11b5adad67e15d0cccce1aaa493e1df34a770e4a5cdcd103,00,00]
- *     index: 2: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
- *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
- *
- * CRTL-d will exit from the command line.
- *
- * You can also do it without the prompt:
- *
- *     $ echo "show ssl ech" | socat /tmp/haproxy.sock stdio
- *     ...
- *
  */
+
 static int cli_io_handler_ech_details(struct appctx *appctx)
 {
     struct buffer *trash = get_trash_chunk();
@@ -6919,24 +6928,16 @@ static int cli_io_handler_ech_details(struct appctx *appctx)
             goto end;
         }
         while (ctx->pp) {
-            int something_to_say = 0;
             struct proxy *pr = ctx->pp;
 
             ctx->pp = ctx->pp->next;
-            /* try print split-mode ECH info */
-            if (pr->srv && pr->tcp_req.ech_ctx) {
-                chunk_appendf(trash, "***\nECH split-mode: %s ", pr->srv->id);
+            /* split-mode ECH info */
+            if (pr->tcp_req.ech_ctx) {
+                chunk_appendf(trash, "***\nbackend (split-mode): %s ", pr->id);
                 cli_print_ech_info(pr->tcp_req.ech_ctx, trash);
-                something_to_say = 1;
+                if (applet_putchk(appctx, trash) == -1)
+                    goto end;
             }
-            /* try print backend ECH info (prbably none) */
-            if (pr->srv && pr->srv->ssl_ctx.ctx) {
-                chunk_appendf(trash, "***\nbackend: %s ", pr->srv->id);
-                cli_print_ech_info(pr->srv->ssl_ctx.ctx, trash);
-                something_to_say = 1;
-            }
-            if (something_to_say && applet_putchk(appctx, trash) == -1)
-                goto end;
         }
         ctx->state = SHOW_ECH_FD;
     }
