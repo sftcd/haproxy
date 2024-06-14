@@ -6714,15 +6714,12 @@ static int cli_parse_show_ech(char **args, char *payload, struct appctx *appctx,
     return 0;
 }
 
-#define ECH_BIO_OUTSIZE 1024
-
 static void cli_print_ech_info(SSL_CTX *ctx, struct buffer *trash)
 {
     OSSL_ECH_INFO *info = NULL;
     SSL *s = NULL;
     int count = 0;
     BIO *out = NULL;
-    char outstr[ECH_BIO_OUTSIZE];
 
     out = BIO_new(BIO_s_mem());
     if (!out) {
@@ -6745,9 +6742,17 @@ static void cli_print_ech_info(SSL_CTX *ctx, struct buffer *trash)
         goto end;
     }
     if (info && count > 0) {
-        memset(outstr, 0, ECH_BIO_OUTSIZE);
-        BIO_read(out, outstr, ECH_BIO_OUTSIZE - 1);
-        chunk_appendf(trash, "%s",outstr);
+        struct buffer *tmp = alloc_trash_chunk();
+        int returned;
+
+        if (!tmp) {
+            chunk_appendf(trash, "error making tmp buffer\n");
+            goto end;
+        }
+        returned = BIO_read(out, tmp->area, tmp->size-1);
+        tmp->area[returned] = '\0';
+        chunk_appendf(trash, "%s\n", tmp->area);
+        free_trash_chunk(tmp);
     }
 
 end:
@@ -6810,6 +6815,12 @@ end:
  *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
  *
  * CRTL-d will exit from the command line.
+ *
+ * You can also do it without the prompt:
+ *
+ *     $ echo "show ssl ech" | socat /tmp/haproxy.sock stdio
+ *     ...
+ *
  */
 static int cli_io_handler_ech_details(struct appctx *appctx)
 {
