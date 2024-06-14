@@ -1974,30 +1974,6 @@ yield:
 #endif
 }
 
-#ifdef USE_ECH
-/* parsing function for 'show ssl ech [echfile]' */
-static int cli_parse_show_ech(char **args, char *payload, struct appctx *appctx, void *private)
-{
-	struct buffer *out = alloc_trash_chunk();
-
-	if (!out)
-		goto end_no_putchk;
-
-    /* retrieve and display ECH info */
-    chunk_appendf(out, "ECH stuff... coming soon\n");
-
-	if (applet_putchk(appctx, out) == -1)
-		goto yield;
-
-end_no_putchk:
-	free_trash_chunk(out);
-	return 1;
-yield:
-	free_trash_chunk(out);
-    return 0;
-}
-#endif
-
 /* parsing function for 'show ssl cert [certfile]' */
 static int cli_parse_show_cert(char **args, char *payload, struct appctx *appctx, void *private)
 {
@@ -4057,9 +4033,6 @@ static struct cli_kw_list cli_kws = {{ },{
 	{ { "abort", "ssl", "crl-file", NULL }, "abort ssl crl-file <crlfile>            : abort a transaction for a CRL file",                                    cli_parse_abort_crlfile, NULL, NULL },
 	{ { "del", "ssl", "crl-file", NULL },   "del ssl crl-file <crlfile>              : delete an unused CRL file",                                             cli_parse_del_crlfile, NULL, NULL },
 	{ { "show", "ssl", "crl-file", NULL },  "show ssl crl-file [<crlfile[:<index>>]] : display the SSL CRL files used in memory, or the details of a <crlfile>, or a single CRL of index <index> of CRL file <crlfile>", cli_parse_show_crlfile, cli_io_handler_show_crlfile, cli_release_show_crlfile },
-#ifdef USE_ECH
-    { { "show", "ssl", "ech", NULL},        "show ssl ech [<echfile>]                : display ECH files used in memory, or the detail of an <echfile>", cli_parse_show_ech, NULL, NULL },
-#endif
 	{ { NULL }, NULL, NULL, NULL }
 }};
 

@@ -233,6 +233,17 @@ struct show_keys_ctx {
 	} state;                       /* phase of the current dump */
 };
 
+#ifdef USE_ECH
+struct show_ech_ctx {
+    struct proxy * pp;
+    int fd;
+    enum {
+        SHOW_ECH_PROXY = 0,
+        SHOW_ECH_FD,
+    } state;                       /* phase of the current dump */
+};
+#endif
+
 /* ssl_sock_io_cb is exported to see it resolved in "show fd" */
 struct task *ssl_sock_io_cb(struct task *, void *, unsigned int);
 static int ssl_sock_handshake(struct connection *conn, unsigned int flag);
@@ -6691,6 +6702,186 @@ static int cli_parse_set_tlskeys(char **args, char *payload, struct appctx *appc
 #endif
 
 
+#ifdef USE_ECH
+/* parsing function for 'show ssl ech [echfile]' */
+static int cli_parse_show_ech(char **args, char *payload, struct appctx *appctx, void *private)
+{
+    struct show_ech_ctx *ctx = applet_reserve_svcctx(appctx, sizeof(*ctx));
+
+    ctx->pp = proxies_list;
+    ctx->state = SHOW_ECH_PROXY;
+    ctx->fd = 0;
+    return 0;
+}
+
+#define ECH_BIO_OUTSIZE 1024
+
+static void cli_print_ech_info(SSL_CTX *ctx, struct buffer *trash)
+{
+    OSSL_ECH_INFO *info = NULL;
+    SSL *s = NULL;
+    int count = 0;
+    BIO *out = NULL;
+    char outstr[ECH_BIO_OUTSIZE];
+
+    out = BIO_new(BIO_s_mem());
+    if (!out) {
+        chunk_appendf(trash, "error making BIO\n");
+        return;
+    }
+    s = SSL_new(ctx);
+    if (!s) {
+        chunk_appendf(trash, "error making SSL\n");
+        return;
+    }
+    if (!SSL_ech_get_info(s, &info, &count)) {
+        chunk_appendf(trash, "error getting ECH Info\n");
+        goto end;
+    }
+    if (count <= 0) {
+        chunk_appendf(trash, "no ECH config\n");
+    } else if (!OSSL_ECH_INFO_print(out, info, count)) {
+        chunk_appendf(trash, "error printing ECH Info\n");
+        goto end;
+    }
+    if (info && count > 0) {
+        memset(outstr, 0, ECH_BIO_OUTSIZE);
+        BIO_read(out, outstr, ECH_BIO_OUTSIZE - 1);
+        chunk_appendf(trash, "%s",outstr);
+    }
+
+end:
+    BIO_free(out);
+    OSSL_ECH_INFO_free(info, count);
+    SSL_free(s);
+    return;
+}
+
+/*
+ * Print out ECH details where they (might) exist
+ *
+ * The applet_putchk() calls will emit text to the "stats" socket
+ * which is more or less a command line UI. If that returns a -1
+ * then we should break off processing to allow other threads to
+ * do stuff (I think). That's why all the "goto end" stuff and
+ * why the code is kind of re-entrant.
+ *
+ * To use this, start haproxy, then (with out test configs)
+ *
+ *      $ socat /tmp/haproxy.sock stdio
+ *      prompt
+ *      > show ssl ech
+ *      ...
+ *      >
+ *
+ * After running socat, you have to type "prompt" to get the
+ * command line.
+ *
+ * Right now the output (for haproxymin.conf) looks like:
+ *
+ *     $ socat /tmp/haproxy.sock stdio
+ *     prompt
+ *     > show ssl ech
+ *     ***
+ *     backend: s2 no ECH config
+ *     ***
+ *     ECH split-mode: eg ECH details (3 configs total)
+ *     index: 0: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
+ *     index: 1: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *             [fe0d,64,example.com,0020,[0001,0001],cc12c8fb828c202d11b5adad67e15d0cccce1aaa493e1df34a770e4a5cdcd103,00,00]
+ *     index: 2: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
+ *     ***
+ *     frontend: ECH-front ECH details (3 configs total)
+ *     index: 0: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
+ *     index: 1: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *             [fe0d,64,example.com,0020,[0001,0001],cc12c8fb828c202d11b5adad67e15d0cccce1aaa493e1df34a770e4a5cdcd103,00,00]
+ *     index: 2: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
+ *     ***
+ *     frontend: Two-TLS ECH details (3 configs total)
+ *     index: 0: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
+ *     index: 1: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *             [fe0d,64,example.com,0020,[0001,0001],cc12c8fb828c202d11b5adad67e15d0cccce1aaa493e1df34a770e4a5cdcd103,00,00]
+ *     index: 2: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
+ *
+ * CRTL-d will exit from the command line.
+ */
+static int cli_io_handler_ech_details(struct appctx *appctx)
+{
+    struct buffer *trash = get_trash_chunk();
+    struct show_ech_ctx *ctx = appctx->svcctx;
+    struct listener *li = NULL;
+    int ret = 0;
+
+    if (!ctx) return 1;
+
+    /* isolate the threads once per round. We're limited to a buffer worth
+     * of output anyway, it cannot last very long.
+     */
+    thread_isolate();
+
+    if (ctx->state == SHOW_ECH_PROXY) {
+        if (!ctx->pp) { /* move to next state */
+            ctx->state = SHOW_ECH_FD;
+            goto end;
+        }
+        while (ctx->pp) {
+            int something_to_say = 0;
+            struct proxy *pr = ctx->pp;
+
+            ctx->pp = ctx->pp->next;
+            /* try print split-mode ECH info */
+            if (pr->tcp_req.ech_ctx) {
+                chunk_appendf(trash, "***\nECH split-mode: %s ", pr->srv->id);
+                cli_print_ech_info(pr->tcp_req.ech_ctx, trash);
+                something_to_say = 1;
+            }
+            /* try print backend ECH info (prbably none) */
+            if (pr->srv && pr->srv->ssl_ctx.ctx) {
+                chunk_appendf(trash, "***\nbackend: %s ", pr->srv->id);
+                cli_print_ech_info(pr->srv->ssl_ctx.ctx, trash);
+                something_to_say = 1;
+            }
+            if (something_to_say && applet_putchk(appctx, trash) == -1)
+                goto end;
+        }
+        ctx->state = SHOW_ECH_FD;
+    }
+
+    if (ctx->state == SHOW_ECH_FD) {
+        struct fdtab *fdt = NULL;
+
+        /* not sure of right limit */
+        while (ctx->fd < global.maxsock) {
+            fdt = &fdtab[ctx->fd++];
+            if (fdt->owner) {
+                li = objt_listener(fdt->owner);
+                if (li && li->bind_conf && li->bind_conf->initial_ctx) {
+                    /* print stuff */
+                    if (li->bind_conf->frontend)
+                        chunk_appendf(trash, "***\nfrontend: %s ", li->bind_conf->frontend->id);
+                    else
+                        chunk_appendf(trash, "***\nfrontend fd; %d ", ctx->fd-1);
+                    cli_print_ech_info(li->bind_conf->initial_ctx, trash);
+                    if (applet_putchk(appctx, trash) == -1)
+                        goto end;
+                }
+            }
+        }
+        ret = 1; /* we're all done */
+    }
+
+end:
+    thread_release();
+    return ret;
+}
+#endif
+
 #ifdef HAVE_SSL_PROVIDERS
 struct provider_name {
 	const char *name;
@@ -6775,6 +6966,9 @@ static struct cli_kw_list cli_kws = {{ },{
 #endif
 #ifdef HAVE_SSL_PROVIDERS
 	{ { "show", "ssl", "providers", NULL },    "show ssl providers                      : show loaded SSL providers", NULL, cli_io_handler_show_providers },
+#endif
+#ifdef USE_ECH
+    { { "show", "ssl", "ech", NULL},        "show ssl ech [<echfile>]                : display ECH files used in memory, or the detail of an <echfile>", cli_parse_show_ech, cli_io_handler_ech_details },
 #endif
 	{ { NULL }, NULL, NULL, NULL }
 }};
