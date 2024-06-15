@@ -6729,31 +6729,32 @@ static int cli_parse_set_tlskeys(char **args, char *payload, struct appctx *appc
  *     prompt
  *     > show ssl ech
  *     ***
- *     backend: s2 no ECH config
+ *     backend (split-mode): 3484
+ *     ECH details (3 configs total)
+ *     index: 0: loaded 4 seconds, SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *         [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
+ *     index: 1: loaded 4 seconds, SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *         [fe0d,64,example.com,0020,[0001,0001],cc12c8fb828c202d11b5adad67e15d0cccce1aaa493e1df34a770e4a5cdcd103,00,00]
+ *     index: 2: loaded 4 seconds, SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *         [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
  *     ***
- *     ECH split-mode: eg ECH details (3 configs total)
- *     index: 0: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
- *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
- *     index: 1: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
- *             [fe0d,64,example.com,0020,[0001,0001],cc12c8fb828c202d11b5adad67e15d0cccce1aaa493e1df34a770e4a5cdcd103,00,00]
- *     index: 2: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
- *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
+ *     frontend: ECH-front
+ *     ECH details (3 configs total)
+ *     index: 0: loaded 4 seconds, SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *         [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
+ *     index: 1: loaded 4 seconds, SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *         [fe0d,64,example.com,0020,[0001,0001],cc12c8fb828c202d11b5adad67e15d0cccce1aaa493e1df34a770e4a5cdcd103,00,00]
+ *     index: 2: loaded 4 seconds, SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *         [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
  *     ***
- *     frontend: ECH-front ECH details (3 configs total)
- *     index: 0: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
- *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
- *     index: 1: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
- *             [fe0d,64,example.com,0020,[0001,0001],cc12c8fb828c202d11b5adad67e15d0cccce1aaa493e1df34a770e4a5cdcd103,00,00]
- *     index: 2: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
- *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
- *     ***
- *     frontend: Two-TLS ECH details (3 configs total)
- *     index: 0: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
- *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
- *     index: 1: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
- *             [fe0d,64,example.com,0020,[0001,0001],cc12c8fb828c202d11b5adad67e15d0cccce1aaa493e1df34a770e4a5cdcd103,00,00]
- *     index: 2: SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
- *             [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
+ *     frontend: Two-TLS
+ *     ECH details (3 configs total)
+ *     index: 0: loaded 4 seconds, SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *         [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
+ *     index: 1: loaded 4 seconds, SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *         [fe0d,64,example.com,0020,[0001,0001],cc12c8fb828c202d11b5adad67e15d0cccce1aaa493e1df34a770e4a5cdcd103,00,00]
+ *     index: 2: loaded 4 seconds, SNI (inner:NULL;outer:NULL), ALPN (inner:NULL;outer:NULL)
+ *         [fe0d,bb,example.com,0020,[0001,0001],62c7607bf2c5fe1108446f132ca4339cf19df1552e5a42960fd02c697360163c,00,00]
  *
  * CRTL-d will exit from the command line.
  *
@@ -6786,7 +6787,7 @@ static int cli_find_ech_specific_ctx(char *name, SSL_CTX **sctx)
     SSL_CTX *res = NULL;
 
     if (!name || !sctx)
-        return 1;
+        return 0;
     /* check in proxies for backend split-mode cases */
     pr = proxies_list;
     while (pr && !found) {
@@ -6971,6 +6972,16 @@ end:
 }
 
 #define ECH_SUCCESS_MSG_MAX 256
+
+/*
+ * For the add and set commands below one needs to provide the ECH PEM file
+ * content on the command line. That can be done via:
+ *
+ *          $ openssl ech -public_name htest.com -pemout htest.pem
+ *          $ echo -e "add ssl ech ECH-front <<EOF\n$(cat htest.pem)\nEOF\n" | socat /tmp/haproxy.sock -
+ *          added a new ECH config to ECH-front
+ *
+ */
 
 /* add ssl ech <name> <pemesni> */
 static int cli_parse_add_ech(char **args, char *payload, struct appctx *appctx,
