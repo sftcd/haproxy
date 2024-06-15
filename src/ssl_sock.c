@@ -6824,7 +6824,7 @@ static int cli_parse_show_ech(char **args, char *payload, struct appctx *appctx,
         SSL_CTX *sctx = NULL;
 
         if (cli_find_ech_specific_ctx(args[3], &sctx) != 1)
-			return cli_err(appctx, "'show ssl ech' unable to locate referenced name\n");
+            return cli_err(appctx, "'show ssl ech' unable to locate referenced name\n");
         ctx->specific_name = args[3];
         ctx->specific_ctx = sctx;
         ctx->state = SHOW_ECH_SPECIFIC;
@@ -6969,7 +6969,76 @@ end:
     thread_release();
     return ret;
 }
-#endif
+
+#define ECH_SUCCESS_MSG_MAX 256
+
+/* add ssl ech <name> <pemesni> */
+static int cli_parse_add_ech(char **args, char *payload, struct appctx *appctx,
+                             void *private)
+{
+    SSL_CTX *sctx = NULL;
+    char success_message[ECH_SUCCESS_MSG_MAX];
+
+    if (!*args[3] || !payload)
+        return cli_err(appctx, "syntax: add ssl ech <name> <PEM file content>");
+    if (cli_find_ech_specific_ctx(args[3], &sctx) != 1)
+        return cli_err(appctx, "'add ssl ech' unable to locate referenced name\n");
+    if (SSL_CTX_ech_server_enable_buffer(sctx, (unsigned char*)payload,
+                                         strlen(payload),
+                                         SSL_ECH_USE_FOR_RETRY) != 1)
+        return cli_err(appctx, "'add ssl ech' error adding provided PEM ECH value\n");
+    snprintf(success_message, ECH_SUCCESS_MSG_MAX,
+             "added a new ECH config to %s", args[3]);
+    return cli_msg(appctx, LOG_INFO, success_message);
+}
+
+/* set ssl ech <name> <pemesni> */
+static int cli_parse_set_ech(char **args, char *payload, struct appctx *appctx, void *private)
+{
+    SSL_CTX *sctx = NULL;
+    char success_message[ECH_SUCCESS_MSG_MAX];
+
+    if (!*args[3] || !payload)
+        return cli_err(appctx, "syntax: set ssl ech <name> <PEM file content>");
+    if (cli_find_ech_specific_ctx(args[3], &sctx) != 1)
+        return cli_err(appctx, "'set ssl ech' unable to locate referenced name\n");
+    if (SSL_CTX_ech_server_flush_keys(sctx, 0) != 1)
+        return cli_err(appctx, "'set ssl ech' error removing old ECH values\n");
+    if (SSL_CTX_ech_server_enable_buffer(sctx, (unsigned char*)payload,
+                                         strlen(payload),
+                                         SSL_ECH_USE_FOR_RETRY) != 1)
+        return cli_err(appctx, "'set ssl ech' error adding provided PEM ECH value\n");
+    snprintf(success_message, ECH_SUCCESS_MSG_MAX,
+             "set new ECH configs for %s", args[3]);
+    return cli_msg(appctx, LOG_INFO, success_message);
+}
+
+/* del ssl ech <name> [<age-in-secs>] */
+static int cli_parse_del_ech(char **args, char *payload, struct appctx *appctx, void *private)
+{
+    SSL_CTX *sctx = NULL;
+    time_t age = 0;
+    char success_message[ECH_SUCCESS_MSG_MAX];
+
+    if (!*args[3])
+        return cli_err(appctx, "syntax: del ssl ech <name>");
+    if (*args[4])
+        age = atoi(args[4]);
+    if (cli_find_ech_specific_ctx(args[3], &sctx) != 1)
+        return cli_err(appctx, "'del ssl ech' unable to locate referenced name\n");
+    if (SSL_CTX_ech_server_flush_keys(sctx, age) != 1)
+        return cli_err(appctx, "'del ssl ech' error removing old ECH values\n");
+    memset(success_message, 0, ECH_SUCCESS_MSG_MAX);
+    if (!age)
+        snprintf(success_message, ECH_SUCCESS_MSG_MAX,
+                 "deleted all ECH configs older than from %s", args[3]);
+    else
+        snprintf(success_message, ECH_SUCCESS_MSG_MAX,
+                 "deleted ECH configs older than %ld seconds from %s", age, args[3]);
+    return cli_msg(appctx, LOG_INFO, success_message);
+}
+
+#endif /* USE_ECH */
 
 #ifdef HAVE_SSL_PROVIDERS
 struct provider_name {
@@ -7057,7 +7126,14 @@ static struct cli_kw_list cli_kws = {{ },{
 	{ { "show", "ssl", "providers", NULL },    "show ssl providers                      : show loaded SSL providers", NULL, cli_io_handler_show_providers },
 #endif
 #ifdef USE_ECH
-    { { "show", "ssl", "ech", NULL},        "show ssl ech [<echfile>]                : display ECH files used in memory, or the detail of an <echfile>", cli_parse_show_ech, cli_io_handler_ech_details },
+    { { "show", "ssl", "ech", NULL},           "show ssl ech [<name>]                   : display a named ECH configuation or all",
+        cli_parse_show_ech, cli_io_handler_ech_details },
+    { { "add", "ssl", "ech", NULL },           "add ssl ech <name> <payload>            : add a new PEM-formatted ECH config and key ",
+        cli_parse_add_ech, NULL, NULL },
+    { { "set", "ssl", "ech", NULL },           "set ssl ech <name> <payload>            : replace all ECH configs with that provided",
+        cli_parse_set_ech, NULL, NULL },
+    { { "del", "ssl", "ech", NULL },           "del ssl ech <name>                      : delete ECH configs",
+        cli_parse_del_ech, NULL, NULL },
 #endif
 	{ { NULL }, NULL, NULL, NULL }
 }};
