@@ -1,10 +1,10 @@
 diff --git a/Makefile b/Makefile
-index 566bdb26a3e7..8603dea25c21 100644
+index 37ac58ae0..aa30f4440 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -975,7 +975,7 @@ src/haproxy.o:	src/haproxy.c $(DEP)
- 	      -DBUILD_ARCH='"$(strip $(ARCH))"' \
- 	      -DBUILD_CPU='"$(strip $(CPU))"' \
+@@ -1077,7 +1077,7 @@ src/haproxy.o:	src/haproxy.c $(DEP)
+ 	$(cmd_CC) $(COPTS) \
+ 	      -DBUILD_TARGET='"$(strip $(TARGET))"' \
  	      -DBUILD_CC='"$(strip $(CC))"' \
 -	      -DBUILD_CFLAGS='"$(strip $(VERBOSE_CFLAGS))"' \
 +	      -DBUILD_CFLAGS='"$(filter-out -ffile-prefix-map=%,$(strip $(VERBOSE_CFLAGS)))"' \
